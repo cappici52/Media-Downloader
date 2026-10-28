@@ -5,6 +5,8 @@ import subprocess
 import zipfile
 import re
 from urllib.parse import urlsplit, urlunsplit
+from functools import lru_cache
+import json
 
 from .settings import settings
 from .validators import URLValidationError, validate_url, validate_network_url
@@ -196,9 +198,22 @@ def quality_options(formats):
     return options
 
 
-def video_info(url, *, use_cookies=True):
+def video_info(url, *, use_cookies=True, instagram_product=None):
     with make_ydl(ydl_options(use_cookies=use_cookies)) as ydl:
-        raw = ydl.extract_info(url, download=False)
+        if instagram_product is None:
+            raw = ydl.extract_info(url, download=False)
+        else:
+            from yt_dlp.extractor.instagram import InstagramIE
+
+            raw = InstagramIE(ydl)._extract_product(instagram_product, get_comments=False)
+            for entry in raw.get("entries") or [raw]:
+                for fmt in entry.get("formats", []):
+                    fmt.setdefault("protocol", urlsplit(fmt["url"]).scheme)
+                    fmt.setdefault("ext", "mp4")
+                    fmt["vcodec"] = fmt.get("vcodec") or "unknown"
+                    fmt["acodec"] = fmt.get("acodec") or "unknown"
+                if entry.get("thumbnails"):
+                    entry["thumbnail"] = entry["thumbnails"][-1]["url"]
         entries = list(raw.get("entries") or [raw])
         videos = []
         for entry in entries:
@@ -217,7 +232,7 @@ def video_info(url, *, use_cookies=True):
         return raw, videos
 
 
-def image_info(url, *, use_cookies=True):
+def image_info(url, *, use_cookies=True, instagram_product=None):
     from gallery_dl import config, extractor
     from gallery_dl.extractor.common import Message
 
@@ -229,7 +244,16 @@ def image_info(url, *, use_cookies=True):
     if settings.browser and use_cookies:
         # gallery-dl uses its own local browser-cookie loader.
         config.set(("extractor",), "cookies", [settings.browser])
-    ext = extractor.find(url)
+    if instagram_product is None:
+        ext = extractor.find(url)
+    else:
+        from gallery_dl.extractor.instagram import InstagramPostExtractor
+
+        class PublicInstagramPostExtractor(InstagramPostExtractor):
+            def posts(self):
+                return iter((instagram_product,))
+
+        ext = PublicInstagramPostExtractor.from_url(url)
     if ext is None:
         raise MediaError("no_media", "ไม่พบรูปในลิงก์นี้")
     # gallery-dl creates its Session lazily, not in extractor.find().
@@ -263,8 +287,82 @@ def image_info(url, *, use_cookies=True):
     return images
 
 
+def instagram_shortcode(url):
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if host != "instagram.com" and not host.endswith(".instagram.com"):
+        return None
+    match = re.fullmatch(r"/(?:[^/]+/)?(?:p|tv|reels?)/([A-Za-z0-9_-]{1,28})/?", parts.path)
+    return match[1] if match else None
+
+
+@lru_cache(maxsize=1)
+def instagram_public_product(shortcode):
+    """Read public media only, with a fresh anonymous session (no browser cookies).
+
+    Public web query documented in gallery-dl issue #9564; Instagram may rotate
+    this query ID. Keep the response bounded and never follow private-content hints.
+    """
+    import requests
+
+    with requests.Session() as session:
+        session.trust_env = False
+        session.headers.update(
+            {
+                "User-Agent": "Mozilla/5.0",
+                "X-IG-App-ID": "936619743392459",
+                "Referer": "https://www.instagram.com/",
+            }
+        )
+        with session.get("https://www.instagram.com/", timeout=20, stream=True) as response:
+            response.raise_for_status()
+        csrf = next((cookie.value for cookie in session.cookies if cookie.name == "csrftoken"), "")
+        session.headers["X-CSRFToken"] = csrf
+        with session.post(
+            "https://www.instagram.com/graphql/query",
+            data={
+                "doc_id": "27128499623469141",
+                "variables": json.dumps(
+                    {
+                        "shortcode": shortcode,
+                        "__relay_internal__pv__PolarisAIGMMediaWebLabelEnabledrelayprovider": False,
+                    }
+                ),
+            },
+            timeout=20,
+            stream=True,
+        ) as response:
+            response.raise_for_status()
+            body = bytearray()
+            for chunk in response.iter_content(65536):
+                body.extend(chunk)
+                if len(body) > 8 * 1024 * 1024:
+                    raise MediaError("metadata_limit", "ข้อมูลโพสต์มีขนาดใหญ่เกินกำหนด")
+            try:
+                data = json.loads(body)
+                items = (
+                    (data.get("data") or {})
+                    .get("xdt_api__v1__media__shortcode__web_info", {})
+                    .get("items", [])
+                )
+            except (ValueError, AttributeError):
+                raise MediaError(
+                    "platform_blocked", "Instagram ไม่ส่งข้อมูลโพสต์สาธารณะ กรุณาลองใหม่ภายหลัง"
+                ) from None
+    if not items or not isinstance(items[0], dict):
+        raise MediaError("login_required", "Instagram ไม่เปิดข้อมูลโพสต์นี้แบบสาธารณะ อาจต้องล็อกอิน")
+    product = items[0]
+    assert_public(product, use_cookies=False)
+    if len(product.get("carousel_media") or [product]) > settings.max_items:
+        raise MediaError("item_limit", "โพสต์มีสื่อเกินจำนวนที่กำหนด")
+    return product
+
+
 def normalize_post_url(url):
     parts = urlsplit(url)
+    shortcode = instagram_shortcode(url)
+    if shortcode:
+        return f"https://www.instagram.com/p/{shortcode}/"
     host = parts.hostname or ""
     if any(host == domain or host.endswith("." + domain) for domain in ("x.com", "twitter.com")):
         path = re.sub(r"(/status/[0-9]+)/(?:photo|video)/[0-9]+/?$", r"\1", parts.path)
@@ -276,12 +374,26 @@ def extract_public_first(adapter, url):
     try:
         return adapter(url, use_cookies=False)
     except Exception as error:
-        if not settings.browser or friendly_error(error)["code"] not in (
-            "login_required",
-            "platform_blocked",
-            "extract_failed",
-        ):
-            raise
+        failure = error
+        code = friendly_error(error)["code"]
+        shortcode = instagram_shortcode(url)
+        retry_codes = ("login_required", "platform_blocked", "extract_failed")
+        if shortcode:
+            retry_codes += ("no_media",)
+        if shortcode and code in retry_codes:
+            try:
+                product = instagram_public_product(shortcode)
+                return adapter(url, use_cookies=False, instagram_product=product)
+            except Exception as fallback_error:
+                if friendly_error(fallback_error)["code"] in (
+                    "private",
+                    "item_limit",
+                    "metadata_limit",
+                ):
+                    raise
+                failure = fallback_error
+        if not settings.browser or code not in retry_codes:
+            raise failure
     return adapter(url, use_cookies=True)
 
 
@@ -303,22 +415,24 @@ def inspect_media(url):
     except Exception as error:
         failures.append(error)
     if not videos and not images:
-        preferred = next(
-            (
-                error
-                for error in failures
-                if friendly_error(error)["code"]
-                in (
-                    "private",
-                    "cookies_locked",
-                    "cookies_decryption",
-                    "cookies_unavailable",
-                    "login_required",
-                    "platform_blocked",
-                    "public_unverified",
-                )
-            ),
-            None,
+        priority = (
+            "private",
+            "cookies_locked",
+            "cookies_decryption",
+            "cookies_unavailable",
+            "login_required",
+            "platform_blocked",
+            "public_unverified",
+        )
+        preferred = (
+            min(
+                failures,
+                key=lambda error: priority.index(friendly_error(error)["code"])
+                if friendly_error(error)["code"] in priority
+                else len(priority),
+            )
+            if failures
+            else None
         )
         raise preferred or (
             failures[-1] if failures else MediaError("no_media", "ไม่พบวิดีโอหรือรูปในลิงก์นี้")
