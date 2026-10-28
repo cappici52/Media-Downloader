@@ -11,6 +11,7 @@ import json
 from .settings import settings
 from .validators import URLValidationError, validate_url, validate_network_url
 from .browser_session import has_worker_session, worker_cookie_jar
+from .tiktok import is_tiktok
 
 
 class MediaError(Exception):
@@ -294,6 +295,7 @@ def has_login_session(jar, url):
     for domains, credentials in (
         (("x.com", "twitter.com"), ({"auth_token"},)),
         (("instagram.com",), ({"sessionid"},)),
+        (("tiktok.com",), ({"sessionid"}, {"sessionid_ss"})),
         (("facebook.com", "fb.watch"), ({"c_user", "xs"},)),
         (("youtube.com", "youtu.be"), ({"SAPISID"}, {"__Secure-3PAPISID"}, {"SID"})),
     ):
@@ -372,7 +374,33 @@ def video_info(url, *, use_cookies=True, instagram_product=None):
     if facebook_story(url):
         options["_story_cookies"] = use_cookies
     with make_ydl(options) as ydl:
-        if instagram_product is None:
+        if is_tiktok(url):
+            from .tiktok import post_data
+            from yt_dlp.extractor.tiktok import TikTokIE
+
+            post = post_data(url, use_cookies=use_cookies)
+            if "imagePost" in post:
+                return {"title": str(post.get("desc") or "TikTok")}, []
+            from http.cookiejar import Cookie
+
+            for row in post.get("_cookie_rows", []):
+                ydl.cookiejar.set_cookie(Cookie(**row))
+            raw = TikTokIE(ydl)._parse_aweme_video_web(post, url, str(post["id"]))
+            raw.update({"extractor": "TikTok", "extractor_key": "TikTok", "webpage_url": url})
+            raw["http_headers"] = dict(post.get("_media_headers") or {"Referer": url})
+            for fmt in raw.get("formats") or []:
+                fmt.setdefault("protocol", urlsplit(fmt.get("url", "")).scheme)
+                fmt.setdefault("ext", "mp4")
+            if raw.get("thumbnails"):
+                raw["thumbnail"] = raw["thumbnails"][-1]["url"]
+            # Use the normal yt-dlp result processing (including its rendition
+            # checks), through GuardedYoutubeDL/UrllibRH inside the socket guard.
+            raw = ydl.process_ie_result(raw, download=False)
+            raw["formats"] = [
+                f for f in reversed(raw.get("formats") or []) if f.get("__working") is not False
+            ]
+            raw["_preview_cookie_rows"] = post.get("_cookie_rows", [])
+        elif instagram_product is None:
             raw = ydl.extract_info(
                 url, download=False, **({"ie_key": "FacebookStory"} if facebook_story(url) else {})
             )
@@ -406,12 +434,17 @@ def video_info(url, *, use_cookies=True, instagram_product=None):
             if (entry.get("duration") or 0) > settings.max_duration:
                 raise MediaError("duration_limit", "วิดีโอยาวเกินเวลาที่กำหนด")
             qualities = quality_options(entry.get("formats") or [entry])
+            if is_tiktok(url) and not any(
+                f.get("height") or f.get("vcodec") not in (None, "none")
+                for f in entry.get("formats", [])
+            ):
+                continue  # A photo slideshow soundtrack is not a video item.
             if qualities:
                 videos.append({"raw": entry, "qualities": qualities, "use_cookies": use_cookies})
         return raw, videos
 
 
-def gallery_extractor(url, *, use_cookies=True, instagram_product=None):
+def gallery_extractor(url, *, use_cookies=True, instagram_product=None, tiktok_product=None):
     from gallery_dl import config, extractor
 
     config.clear()
@@ -419,10 +452,27 @@ def gallery_extractor(url, *, use_cookies=True, instagram_product=None):
     config.set(("extractor",), "retries", 1)
     config.set(("extractor",), "timeout", 20)
     config.set(("extractor",), "proxy", "")
+    if is_tiktok(url):
+        config.set(("extractor", "tiktok"), "audio", False)
+        config.set(("extractor", "tiktok"), "covers", False)
     if settings.browser and use_cookies:
         # gallery-dl uses its own local browser-cookie loader.
         config.set(("extractor",), "cookies", [settings.browser])
-    if instagram_product is None:
+    if tiktok_product is not None:
+        from gallery_dl.extractor.tiktok import TiktokPostExtractor
+        import copy
+
+        class PreparedTiktokPostExtractor(TiktokPostExtractor):
+            def _extract_rehydration_data(self, *args, **kwargs):
+                return {
+                    "webapp.video-detail": {
+                        "statusCode": 0,
+                        "itemInfo": {"itemStruct": copy.deepcopy(tiktok_product)},
+                    }
+                }
+
+        ext = PreparedTiktokPostExtractor.from_url(url)
+    elif instagram_product is None:
         ext = extractor.find(url)
     else:
         from gallery_dl.extractor.instagram import InstagramPostExtractor
@@ -532,7 +582,17 @@ def image_info(url, *, use_cookies=True, instagram_product=None):
     if facebook_story(url):
         return facebook_story_images(url, use_cookies=use_cookies)
 
-    ext = gallery_extractor(url, use_cookies=use_cookies, instagram_product=instagram_product)
+    tiktok_product = None
+    if is_tiktok(url):
+        from .tiktok import post_data
+
+        tiktok_product = post_data(url, use_cookies=use_cookies)
+    ext = gallery_extractor(
+        url,
+        use_cookies=use_cookies,
+        instagram_product=instagram_product,
+        tiktok_product=tiktok_product,
+    )
     images = []
     for message in ext:
         if message[0] != Message.Url:
@@ -665,6 +725,10 @@ def instagram_public_product(shortcode):
 
 def normalize_post_url(url):
     parts = urlsplit(url)
+    if is_tiktok(url):
+        from .tiktok import normalize_url
+
+        return normalize_url(url)
     if facebook_story(url):
         return "https://www.facebook.com" + parts.path
     shortcode = instagram_shortcode(url)
@@ -754,7 +818,7 @@ def extract_public_first(adapter, url):
             host == domain or host.endswith("." + domain) for domain in ("x.com", "twitter.com")
         )
         retry_codes = ("login_required", "private", "platform_blocked", "extract_failed")
-        if shortcode or is_x or instagram_story(url) or facebook_story(url):
+        if shortcode or is_x or instagram_story(url) or facebook_story(url) or is_tiktok(url):
             retry_codes += ("no_media",)
         if shortcode and code in retry_codes:
             try:
@@ -796,6 +860,13 @@ def inspect_media(url, cursor=None, *, use_session_first=False):
     if cursor is not None:
         raise MediaError("cursor", "โหลดหน้าถัดไปได้เฉพาะลิงก์โปรไฟล์ Instagram")
     url = normalize_post_url(checked.url)
+    if is_tiktok(url):
+        from .tiktok import resolve_url
+
+        url = resolve_url(url)
+    tiktok_session = (
+        is_tiktok(url) and settings.browser and has_worker_session() and any(worker_cookie_jar())
+    )
     product = None
     authenticated = (
         use_session_first and settings.browser and has_login_session(worker_cookie_jar(), url)
@@ -804,6 +875,8 @@ def inspect_media(url, cursor=None, *, use_session_first=False):
         product = instagram_authenticated_product(url)
 
     def inspect_adapter(adapter):
+        if tiktok_session:
+            return adapter(url, use_cookies=True)
         if authenticated:
             return adapter(
                 url, use_cookies=True, **({"instagram_product": product} if product else {})
@@ -932,6 +1005,9 @@ def video_preview(entry):
         },
         "media_type": "video/mp4" if fmt["ext"] == "mp4" else "video/webm",
         "muted": fmt.get("acodec") == "none",
+        "cookie_rows": entry.get("_preview_cookie_rows", [])
+        if entry.get("extractor_key") == "TikTok"
+        else [],
     }
 
 

@@ -63,6 +63,8 @@ class ValidatorTests(unittest.TestCase):
             "evilyoutube.com",
             "youtube.com.evil.test",
             "notx.com",
+            "eviltiktok.com",
+            "tiktok.com.evil.test",
             "example.com",
             "localhost",
         ):

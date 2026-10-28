@@ -24,6 +24,7 @@ ALLOWED_DOMAINS = (
     "instagram.com",
     "x.com",
     "twitter.com",
+    "tiktok.com",
 )
 MAX_URL_LENGTH = 8192
 MAX_REDIRECTS = 5
@@ -115,7 +116,7 @@ def _validate(url: str, *, platform_only: bool) -> ValidatedURL:
         hostname == domain or hostname.endswith("." + domain) for domain in ALLOWED_DOMAINS
     ):
         raise URLValidationError(
-            "unsupported_domain", "รองรับเฉพาะลิงก์ YouTube, Facebook, Instagram และ X เท่านั้น"
+            "unsupported_domain", "รองรับเฉพาะลิงก์ YouTube, Facebook, Instagram, X และ TikTok เท่านั้น"
         )
     try:
         records = socket.getaddrinfo(hostname, port or expected_port, type=socket.SOCK_STREAM)

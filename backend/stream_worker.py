@@ -47,6 +47,17 @@ def stream(request, output, on_headers=None):
     headers.update({"Range": bounded_range(request.get("range")), "Accept-Encoding": "identity"})
     with requests.Session() as session:
         session.trust_env = False
+        # This descriptor comes from inspected media in server RAM, never the
+        # client. Preserve CookieJar domain/path/expiry rules across redirects.
+        from .tiktok import is_tiktok
+        from http.cookiejar import Cookie
+
+        if is_tiktok(descriptor["url"]):
+            for row in descriptor.get("cookie_rows", []):
+                if is_tiktok("https://" + row["domain"].lstrip(".")):
+                    cookie = Cookie(**row)
+                    if not cookie.is_expired():
+                        session.cookies.set_cookie(cookie)
         with session.get(descriptor["url"], headers=headers, stream=True, timeout=20) as response:
             if response.status_code == 416:
                 raise MediaError("invalid_range", "ช่วงข้อมูลวิดีโอไม่ถูกต้อง")

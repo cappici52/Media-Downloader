@@ -17,6 +17,7 @@ GROUPS = (
     ("facebook.com", "fb.watch"),
     ("instagram.com",),
     ("x.com", "twitter.com"),
+    ("tiktok.com",),
 )
 _worker_rows = None
 
