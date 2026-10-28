@@ -117,3 +117,7 @@ selections survive errors and retries. A new URL cancels requests and stale
 responses cannot replace it. Empty results explain possible access restrictions.
 Read all is bounded to 1,000 posts/100 pages. Aggregate media and byte limits
 still apply per download. Existing alerts, progress and job recovery stay shared.
+
+TikTok single video/photo posts reuse the same URL form, media picker, native
+quality control, preview and download states. Slideshow soundtracks are omitted
+from video selections. Unsupported LIVE/profile links receive a Thai error.
