@@ -377,8 +377,12 @@ def extract_public_first(adapter, url):
         failure = error
         code = friendly_error(error)["code"]
         shortcode = instagram_shortcode(url)
+        host = urlsplit(url).hostname or ""
+        is_x = any(
+            host == domain or host.endswith("." + domain) for domain in ("x.com", "twitter.com")
+        )
         retry_codes = ("login_required", "platform_blocked", "extract_failed")
-        if shortcode:
+        if shortcode or is_x:
             retry_codes += ("no_media",)
         if shortcode and code in retry_codes:
             try:
@@ -393,8 +397,21 @@ def extract_public_first(adapter, url):
                     raise
                 failure = fallback_error
         if not settings.browser or code not in retry_codes:
+            if is_x and code == "no_media":
+                raise MediaError(
+                    "x_unavailable",
+                    "X ไม่ส่งข้อมูลรูปหรือวิดีโอของโพสต์นี้ อาจไม่มีสื่อหรือถูกจำกัดการเข้าถึง ยังยืนยันไม่ได้ว่าโพสต์ถูกลบ",
+                ) from None
             raise failure
-    return adapter(url, use_cookies=True)
+    try:
+        return adapter(url, use_cookies=True)
+    except Exception as error:
+        if is_x and friendly_error(error)["code"] == "no_media":
+            raise MediaError(
+                "x_unavailable",
+                "X ไม่ส่งข้อมูลรูปหรือวิดีโอให้ session นี้ อาจไม่มีสื่อหรือถูกจำกัดการเข้าถึง ยังยืนยันไม่ได้ว่าโพสต์ถูกลบ",
+            ) from None
+        raise
 
 
 def inspect_media(url):

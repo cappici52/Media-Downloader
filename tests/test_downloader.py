@@ -64,6 +64,40 @@ class DownloaderTests(unittest.TestCase):
             downloader.extract_public_first(adapter, "url")
         self.assertEqual(adapter.call_count, 1)
 
+    def test_x_missing_media_retries_configured_browser_session(self):
+        adapter = Mock(side_effect=[MediaError("no_media", "No video could be found"), ["video"]])
+        with patch.object(downloader, "settings", replace(downloader.settings, browser="chrome")):
+            result = downloader.extract_public_first(adapter, "https://x.com/owner/status/123")
+        self.assertEqual(result, ["video"])
+        self.assertEqual(
+            [call.kwargs["use_cookies"] for call in adapter.call_args_list], [False, True]
+        )
+
+    def test_x_unavailable_does_not_claim_the_post_was_deleted(self):
+        adapter = Mock(side_effect=MediaError("no_media", "Unavailable"))
+        with (
+            patch.object(downloader, "settings", replace(downloader.settings, browser="")),
+            self.assertRaises(MediaError) as error,
+        ):
+            downloader.extract_public_first(adapter, "https://twitter.com/owner/status/123")
+        self.assertEqual(error.exception.code, "x_unavailable")
+        self.assertIn("ยังยืนยันไม่ได้", str(error.exception))
+        self.assertEqual(adapter.call_count, 1)
+
+    def test_x_missing_media_reports_browser_cookie_failure(self):
+        adapter = Mock(
+            side_effect=[
+                MediaError("no_media", "No video"),
+                Exception("Could not copy Chrome cookie database"),
+            ]
+        )
+        with (
+            patch.object(downloader, "settings", replace(downloader.settings, browser="chrome")),
+            self.assertRaises(Exception) as error,
+        ):
+            downloader.extract_public_first(adapter, "https://x.com/owner/status/123")
+        self.assertEqual(friendly_error(error.exception)["code"], "cookies_locked")
+
     def test_x_media_links_normalize_to_the_entire_post(self):
         for host in ("x.com", "twitter.com", "www.x.com", "m.twitter.com"):
             url = f"https://{host}/owner/status/123"
