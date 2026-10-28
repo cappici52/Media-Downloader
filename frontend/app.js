@@ -108,15 +108,25 @@ async function api(path, options = {}) {
   const timeout = setTimeout(() => controller.abort(), path === "/info" ? 135000 : 20000);
   const outer = options.signal;
   if (outer) outer.addEventListener("abort", () => controller.abort(), { once: true });
+  const waitUntil = Date.now() + 20000;
   try {
-    const response = await fetch(path, { ...options, signal: controller.signal, headers: { "Content-Type": "application/json", ...options.headers } });
-    const body = await response.json();
-    if (!response.ok) {
-      const failure = new Error(body.error?.message || "ทำรายการไม่สำเร็จ กรุณาลองใหม่");
-      failure.status = response.status;
-      throw failure;
+    while (true) {
+      const response = await fetch(path, { ...options, signal: controller.signal, headers: { "Content-Type": "application/json", ...options.headers } });
+      const body = await response.json();
+      // Profile thumbnails share the bounded worker pool with inspection.
+      // Wait briefly for a slot only for read-only info; never retry a download.
+      if (path === "/info" && response.status === 429 && body.error?.code === "busy" && Date.now() < waitUntil) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        if (controller.signal.aborted) throw new DOMException("Aborted", "AbortError");
+        continue;
+      }
+      if (!response.ok) {
+        const failure = new Error(body.error?.message || "ทำรายการไม่สำเร็จ กรุณาลองใหม่");
+        failure.status = response.status;
+        throw failure;
+      }
+      return body;
     }
-    return body;
   } catch (issue) {
     if (issue.name === "AbortError") throw new Error("การเชื่อมต่อใช้เวลานานเกินไป กรุณาลองใหม่");
     if (issue instanceof TypeError) throw new Error("เชื่อมต่อแอปไม่ได้ ตรวจสอบว่าเซิร์ฟเวอร์ยังทำงานอยู่ แล้วลองอีกครั้ง");
@@ -134,12 +144,12 @@ function renderMedia(result, preserve = false) {
   $("picker-title").textContent = isProfile ? "เลือกโพสต์ที่จะบันทึก" : "เลือกสื่อที่จะบันทึก";
   $("picker-help").textContent = isProfile ? "กดภาพปกเพื่อดูสื่อในโพสต์ เลือกหลายโพสต์เพื่อรวมเป็น ZIP" : "กดที่รูปเพื่อขยาย หรือกดที่คลิปเพื่อเล่นตัวอย่าง";
   $("download-note").textContent = isProfile ? "ดาวน์โหลดทุกสื่อในโพสต์ที่เลือกเป็น ZIP · คลิปเลือกคุณภาพไม่เกิน 720p เมื่อมีให้เลือก · ขีดจำกัดนับรวมทุกสื่อ" : "เลือกได้ทั้งวิดีโอและรูปภาพ หลายรายการจะรวมเป็นไฟล์ ZIP";
-  if (isProfile) $("profile-status").textContent = `อ่านแล้ว ${numbers.format(result.items.length)} โพสต์${result.next_cursor ? " · ยังมีโพสต์เพิ่มเติม" : " · อ่านครบตามที่ Instagram ส่งมาแล้ว"}`;
+  if (isProfile) $("profile-status").textContent = `อ่านแล้ว ${numbers.format(result.items.length)} โพสต์${result.next_cursor ? " · ยังมีโพสต์เพิ่มเติม" : " · อ่านครบตามที่แพลตฟอร์มส่งมาแล้ว"}`;
   $("empty-state").hidden = true;
   $("media-content").hidden = false;
   $("media-title").textContent = result.title;
-  if (isProfile && !result.items.length) $("profile-status").textContent = "ยังไม่พบโพสต์ อาจไม่มีโพสต์หรือบัญชีที่เชื่อมต่อยังไม่มีสิทธิ์ดู";
-  const kinds = { video: "วิดีโอ", image: "รูปภาพ", carousel: "โพสต์หลายรายการ", profile: "โปรไฟล์ Instagram" };
+  if (isProfile && !result.items.length && !result.next_cursor) $("profile-status").textContent = "ยังไม่พบโพสต์ อาจไม่มีโพสต์หรือบัญชีที่เชื่อมต่อยังไม่มีสิทธิ์ดู";
+  const kinds = { video: "วิดีโอ", image: "รูปภาพ", carousel: "โพสต์หลายรายการ", profile: `โปรไฟล์ ${result.platform || "Instagram"}` };
   const duration = result.duration ? ` · ${numbers.format(Math.floor(result.duration / 60))}:${String(Math.floor(result.duration % 60)).padStart(2, "0")} นาที` : "";
   $("media-meta").textContent = `${kinds[result.type] || "สื่อ"} · ${numbers.format(result.items.length)} รายการ${duration}`;
   const thumbnail = $("thumbnail");
@@ -212,7 +222,7 @@ async function loadProfilePages(all = false) {
   try {
     do {
       const cursor = media.next_cursor;
-      if (!cursor || cursors.has(cursor)) throw new Error("Instagram ส่งหน้าซ้ำ กรุณาลองใหม่ภายหลัง");
+      if (!cursor || cursors.has(cursor)) throw new Error("แพลตฟอร์มส่งหน้าซ้ำ กรุณาลองใหม่ภายหลัง");
       cursors.add(cursor);
       if (cursors.size > 100) throw new Error("อ่านครบขีดจำกัด 100 หน้าแล้ว กรุณาเลือกดาวน์โหลดเป็นชุด");
       $("profile-status").textContent = `กำลังอ่านโพสต์เพิ่ม… อ่านแล้ว ${numbers.format(media.items.length)} โพสต์`;

@@ -120,4 +120,10 @@ still apply per download. Existing alerts, progress and job recovery stay shared
 
 TikTok single video/photo posts reuse the same URL form, media picker, native
 quality control, preview and download states. Slideshow soundtracks are omitted
-from video selections. Unsupported LIVE/profile links receive a Thai error.
+from video selections. Unsupported LIVE links receive a Thai error. TikTok profiles reuse the canonical
+profile grid, pagination, selection restoration and bulk ZIP flow. Platform names
+come from profile metadata; completion copy remains platform-neutral.
+
+Read-only inspection retries a busy worker slot for up to 20 seconds when profile
+thumbnails occupy the shared pool. Abort and stale-response protections remain
+active. Download creation never retries automatically.
