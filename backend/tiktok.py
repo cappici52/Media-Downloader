@@ -31,6 +31,9 @@ def post_data(url, *, use_cookies):
             raise MediaError("extract_failed", "อ่านโพสต์ TikTok ไม่สำเร็จ กรุณาลองใหม่ภายหลัง")
         if str(post.get("id")) != urlsplit(url).path.rstrip("/").split("/")[-1]:
             raise MediaError("no_media", "TikTok ส่งข้อมูลไม่ตรงกับโพสต์ในลิงก์ กรุณาตรวจสอบลิงก์ใหม่")
+        owner = urlsplit(url).path.split("/")[1].removeprefix("@")
+        if owner and str((post.get("author") or {}).get("uniqueId", "")).lower() != owner.lower():
+            raise MediaError("no_media", "TikTok ส่งโพสต์ไม่ตรงกับบัญชีในลิงก์ กรุณาตรวจสอบลิงก์ใหม่")
         if any(post.get(key) for key in ("isPaidContent", "isPaidVideo", "isPaidCollection")):
             raise MediaError("paywall", "ไม่รองรับเนื้อหา TikTok แบบเสียเงิน")
         if (post.get("video") or {}).get("isDRM"):

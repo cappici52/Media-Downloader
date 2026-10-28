@@ -854,11 +854,14 @@ def extract_public_first(adapter, url):
 def inspect_media(url, cursor=None, *, use_session_first=False):
     checked = validate_url(url)
     from .profiles import instagram_profile, inspect_profile
+    from .tiktok_profiles import tiktok_profile, inspect_profile as inspect_tiktok_profile
 
+    if tiktok_profile(checked.url):
+        return inspect_tiktok_profile(checked.url, cursor), [], []
     if instagram_profile(checked.url):
         return inspect_profile(checked.url, cursor), [], []
     if cursor is not None:
-        raise MediaError("cursor", "โหลดหน้าถัดไปได้เฉพาะลิงก์โปรไฟล์ Instagram")
+        raise MediaError("cursor", "โหลดหน้าถัดไปได้เฉพาะลิงก์โปรไฟล์ Instagram หรือ TikTok")
     url = normalize_post_url(checked.url)
     if is_tiktok(url):
         from .tiktok import resolve_url
@@ -1108,8 +1111,9 @@ def transcode(inputs, output, audio=False):
 def download_media(url, selections, directory, emit, *, inspected=None):
     import requests
     from .profiles import instagram_profile, download_profile
+    from .tiktok_profiles import tiktok_profile
 
-    if instagram_profile(url):
+    if instagram_profile(url) or tiktok_profile(url):
         checked = validate_url(url)
         return download_profile(checked.url, selections, directory, emit)
     public, videos, images = inspected if inspected is not None else inspect_media(url)

@@ -316,6 +316,9 @@ def download_profile(url, selections, directory, emit):
     for selection in selections:
         if not re.fullmatch(r"post-[A-Za-z0-9_-]{1,28}", selection["id"]):
             raise MediaError("selection", "รายการโพสต์ไม่ถูกต้อง กรุณาตรวจสอบโปรไฟล์ใหม่")
+    from .tiktok_profiles import tiktok_profile
+
+    tiktok_user = tiktok_profile(url)
     output = directory / "profile.zip"
     file_count = 0
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED) as archive:
@@ -328,6 +331,10 @@ def download_profile(url, selections, directory, emit):
                 }
             )
             post_url = f"https://www.instagram.com/p/{selection['id'][5:]}/"
+            if tiktok_user:
+                if not selection["id"][5:].isdigit():
+                    raise MediaError("selection", "รหัสโพสต์ TikTok ไม่ถูกต้อง")
+                post_url = f"https://www.tiktok.com/@{tiktok_user}/video/{selection['id'][5:]}"
             inspected = inspect_media(post_url, use_session_first=True)
             items = inspected[0]["items"]
             file_count += len(items)
