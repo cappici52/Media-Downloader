@@ -450,6 +450,7 @@ def inspect_media(url):
                 "thumbnail": entry.get("thumbnail"),
                 "duration": entry.get("duration"),
                 "qualities": video["qualities"],
+                "_preview": video_preview(entry),
             }
         )
     for index, image in enumerate(images):
@@ -476,6 +477,43 @@ def inspect_media(url):
     return public, videos, images
 
 
+def video_preview(entry):
+    formats = [
+        fmt
+        for fmt in entry.get("formats", [entry])
+        if allowed_format(fmt)
+        and fmt.get("protocol") in ("http", "https")
+        and fmt.get("ext") in ("mp4", "webm")
+        and fmt.get("vcodec") != "none"
+        and (fmt.get("filesize") or 0) <= settings.max_bytes
+    ]
+    if not formats:
+        return None
+
+    # Progressive MP4 with sound is the most widely playable browser preview.
+    def score(fmt):
+        height = fmt.get("height") or 0
+        return (
+            fmt.get("acodec") not in (None, "none"),
+            fmt.get("ext") == "mp4",
+            height <= 720,
+            height if height <= 720 else -height,
+        )
+
+    fmt = max(formats, key=score)
+    headers = dict(entry.get("http_headers") or {}) | dict(fmt.get("http_headers") or {})
+    return {
+        "url": fmt["url"],
+        "headers": {
+            key: value
+            for key, value in headers.items()
+            if key.lower() in ("user-agent", "referer", "origin")
+        },
+        "media_type": "video/mp4" if fmt["ext"] == "mp4" else "video/webm",
+        "muted": fmt.get("acodec") == "none",
+    }
+
+
 def download_preview(url, directory):
     import requests
 
@@ -492,10 +530,24 @@ def download_preview(url, directory):
             with target.open("wb") as stream:
                 for chunk in response.iter_content(65536):
                     size += len(chunk)
-                    if size > 2 * 1024 * 1024:
+                    if size > 12 * 1024 * 1024:
                         raise MediaError("preview", "รูปตัวอย่างมีขนาดใหญ่เกินไป")
                     stream.write(chunk)
-    return {"filename": target.name, "media_type": kind}
+    from PIL import Image, ImageOps
+    import warnings
+
+    Image.MAX_IMAGE_PIXELS = 20_000_000
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(target) as source:
+                image = ImageOps.exif_transpose(source)
+                image.thumbnail((1280, 1280))
+                image.convert("RGB").save(directory / "thumbnail.jpg", quality=85, optimize=True)
+    except (OSError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning):
+        raise MediaError("preview", "ไม่สามารถแสดงตัวอย่างรูปนี้ได้") from None
+    target.unlink()
+    return {"filename": "thumbnail.jpg", "media_type": "image/jpeg"}
 
 
 def check_size(directory):

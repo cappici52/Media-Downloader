@@ -2,7 +2,7 @@ from dataclasses import replace
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock
 
 from fastapi.testclient import TestClient
 from backend import main
@@ -80,6 +80,59 @@ class APITests(unittest.TestCase):
         body = response.json()
         self.assertTrue(body["thumbnail"].startswith("/thumbnails/"))
         self.assertNotIn("cdn.example", response.text)
+
+    def test_video_preview_uses_private_ticket_and_streams_a_range(self):
+        from types import SimpleNamespace
+
+        descriptor = {
+            "url": "https://cdn.example/private-signed.mp4",
+            "headers": {},
+            "media_type": "video/mp4",
+            "muted": False,
+        }
+        data = {
+            "type": "video",
+            "title": "คลิป",
+            "thumbnail": None,
+            "items": [
+                {
+                    "id": "video-0",
+                    "type": "video",
+                    "thumbnail": None,
+                    "qualities": [],
+                    "_preview": descriptor,
+                }
+            ],
+        }
+        with self.valid_dns(), patch.object(self.manager, "inspect", AsyncMock(return_value=data)):
+            response = self.client.post("/info", json={"url": "https://youtube.com"})
+        self.assertNotIn("private-signed", response.text)
+        self.assertNotIn("_preview", response.text)
+        path = response.json()["items"][0]["preview_url"]
+
+        async def chunks():
+            yield b"clip"
+
+        lease = SimpleNamespace(
+            header={
+                "status": 206,
+                "headers": {
+                    "Content-Length": "4",
+                    "Content-Range": "bytes 10-13/100",
+                    "Content-Type": "video/mp4",
+                },
+            },
+            chunks=chunks,
+            close=AsyncMock(),
+        )
+        with patch.object(main.PreviewStream, "open", AsyncMock(return_value=lease)) as opener:
+            streamed = self.client.get(path, headers={"Range": "bytes=10-13"})
+        self.assertEqual(streamed.status_code, 206)
+        self.assertEqual(streamed.content, b"clip")
+        self.assertEqual(streamed.headers["content-range"], "bytes 10-13/100")
+        self.assertEqual(opener.call_args.args[1], "bytes=10-13")
+        lease.close.assert_awaited()
+        self.assertEqual(self.client.get("/streams/expired/0").status_code, 404)
 
     def test_job_to_file_round_trip(self):
         with self.valid_dns():

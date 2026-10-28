@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.exceptions import HTTPException
@@ -19,10 +19,12 @@ from .downloader import MediaError
 from .jobs import JobManager, run_worker
 from .settings import settings
 from .validators import URLValidationError, validate_url
+from .streaming import PreviewStream, PreviewResponse
 
 
 manager = JobManager()
 previews = {}
+thumbnail_pending = 0
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -78,7 +80,7 @@ async def private_request_policy(request: Request, call_next):
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["Cache-Control"] = "no-store"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
     )
     return response
 
@@ -146,6 +148,7 @@ async def info(payload: InfoRequest):
         previews.pop(next(iter(previews)))
     identifier = uuid4().hex
     urls = []
+    streams = []
 
     def proxy_thumbnail(item):
         thumbnail = item.get("thumbnail")
@@ -158,8 +161,15 @@ async def info(payload: InfoRequest):
     proxy_thumbnail(result)
     for item in result.get("items", []):
         proxy_thumbnail(item)
+        descriptor = item.pop("_preview", None)
+        if item["type"] == "video" and isinstance(descriptor, dict):
+            streams.append(descriptor)
+            item["preview_url"] = f"/streams/{identifier}/{len(streams) - 1}"
+            item["preview_muted"] = bool(descriptor.get("muted"))
+        else:
+            item["preview_url"] = None
     result["images"] = [item for item in result.get("items", []) if item["type"] == "image"]
-    previews[identifier] = {"urls": urls, "expires": time.time() + settings.ttl}
+    previews[identifier] = {"urls": urls, "streams": streams, "expires": time.time() + settings.ttl}
     result["limits"] = {
         "max_file_mb": settings.max_bytes // (1024 * 1024),
         "max_duration_seconds": settings.max_duration,
@@ -209,28 +219,55 @@ async def file_download(identifier: str):
 
 @app.get("/thumbnails/{identifier}/{index}")
 async def thumbnail(identifier: str, index: int):
+    global thumbnail_pending
     prune_previews()
     entry = previews.get(identifier)
     if entry is None or not 0 <= index < len(entry["urls"]):
         return error_response("preview_expired", "ตัวอย่างรูปหมดอายุแล้ว", 404)
-    if manager.slots.locked():
+    if thumbnail_pending >= settings.max_items:
         return error_response("busy", "ระบบกำลังทำงานเต็มจำนวน", 429)
     directory = settings.root / uuid4().hex
-    directory.mkdir()
+    thumbnail_pending += 1
     try:
-        async with manager.slots:
-            result = await run_worker(
-                {"action": "preview", "url": entry["urls"][index], "directory": str(directory)},
-                timeout=30,
-            )
+        async with asyncio.timeout(60):
+            async with manager.slots:
+                directory.mkdir()
+                result = await run_worker(
+                    {"action": "preview", "url": entry["urls"][index], "directory": str(directory)},
+                    timeout=30,
+                )
         return ClosingFileResponse(
             directory / result["filename"],
             media_type=result["media_type"],
             on_close=lambda: shutil.rmtree(directory, True),
         )
+    except TimeoutError:
+        await asyncio.to_thread(shutil.rmtree, directory, True)
+        raise MediaError("busy", "ระบบกำลังทำงานเต็มจำนวน กรุณาเปิดตัวอย่างอีกครั้ง") from None
     except BaseException:
         await asyncio.to_thread(shutil.rmtree, directory, True)
         raise
+    finally:
+        thumbnail_pending -= 1
+
+
+@app.api_route("/streams/{identifier}/{index}", methods=["GET", "HEAD"])
+async def stream_preview(identifier: str, index: int, request: Request):
+    prune_previews()
+    entry = previews.get(identifier)
+    if entry is None or not 0 <= index < len(entry.get("streams", [])):
+        return error_response("preview_expired", "ตัวอย่างคลิปหมดอายุแล้ว กรุณาตรวจสอบลิงก์ใหม่", 404)
+    try:
+        lease = await PreviewStream.open(
+            entry["streams"][index], request.headers.get("range"), manager.slots
+        )
+    except MediaError as error:
+        status = 416 if error.code == "invalid_range" else 429 if error.code == "busy" else 502
+        return error_response(error.code, str(error), status)
+    if request.method == "HEAD":
+        await lease.close()
+        return Response(status_code=lease.header["status"], headers=lease.header["headers"])
+    return PreviewResponse(lease)
 
 
 @app.get("/")
