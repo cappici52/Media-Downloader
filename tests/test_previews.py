@@ -112,6 +112,20 @@ class PreviewTests(unittest.TestCase):
             self.assertEqual(result["media_type"], "image/jpeg")
             self.assertFalse((Path(temp) / "preview").exists())
 
+    def test_thumbnail_rejects_non_image_formats_with_spoofed_mime(self):
+        source = io.BytesIO()
+        Image.new("RGB", (4, 4), "blue").save(source, format="EPS")
+        session, _ = self.mock_session(
+            source.getvalue(), {"Content-Type": "image/jpeg"}, status=200
+        )
+        with (
+            tempfile.TemporaryDirectory() as temp,
+            patch("requests.Session", return_value=session),
+            patch("backend.downloader.validate_network_url"),
+            self.assertRaises(MediaError),
+        ):
+            download_preview("https://cdn.example/fake.jpg", Path(temp))
+
 
 class StreamProcessTests(unittest.IsolatedAsyncioTestCase):
     async def test_real_stream_worker_rejects_internal_addresses_and_releases_slot(self):

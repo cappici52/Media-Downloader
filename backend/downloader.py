@@ -541,6 +541,8 @@ def download_preview(url, directory):
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)
             with Image.open(target) as source:
+                if source.format not in ("JPEG", "PNG", "WEBP", "GIF", "AVIF"):
+                    raise MediaError("preview", "ชนิดไฟล์รูปตัวอย่างไม่รองรับ")
                 image = ImageOps.exif_transpose(source)
                 image.thumbnail((1280, 1280))
                 image.convert("RGB").save(directory / "thumbnail.jpg", quality=85, optimize=True)

@@ -11,6 +11,12 @@ colors:
   border: '#d6e0ed'
   danger: '#a12b38'
   success: '#216344'
+  picker-surface: '#191919'
+  picker-tile: '#272727'
+  picker-border: '#373737'
+  picker-text: '#f0f0f0'
+  picker-muted: '#b3b3b3'
+  picker-accent: '#91b7ff'
 typography:
   sans:
     fontFamily: 'Segoe UI, Tahoma, sans-serif'
@@ -37,7 +43,7 @@ A desktop download tray: one link goes in, a clear set of files comes out.
 Personal localhost tool for a Thai-speaking owner, based on the user's project brief.
 One screen for URL inspection, mixed-media selection and asynchronous download.
 Thai locale; no Japan-market requirements. Desktop-first with full mobile support.
-The signature is a three-stage path and an open media-selection list. No marketing
+The signature is a three-stage path and a visual media picker. No marketing
 sections, invented metrics, decorative dashboard chrome or external font requests.
 Runtime ownership is Model B: `frontend/styles.css :root` owns semantic tokens;
 this document mirrors them. `--color-*` supplies all component colors,
@@ -49,7 +55,9 @@ No sibling screen exists; all states share the same workspace.
 Cool blue-gray background, white workspace, navy text and cobalt primary action.
 Muted text remains legible. Danger means actionable error; success is reserved for
 completion. Visible scrollbar thumb uses the shared blue-gray scale. Forced-color
-mode restores system colors. Only a light theme is implemented.
+mode restores system colors. The main workspace is light; the user's reference
+sets a charcoal picker with pale text and blue selection borders. Its palette
+maps directly to `--picker-*` tokens in the canonical stylesheet.
 
 ## Typography
 Segoe UI display, 30px/1.3 bold; Segoe UI/Tahoma body, 16px/1.65. Thai-capable
@@ -59,8 +67,10 @@ Long source titles wrap. Numeric formatting uses th-TH; duration uses minutes an
 ## Layout
 1080px maximum page width, 24px outer gutters, 30px workspace padding.
 At 640px controls and preview stack. Document owns vertical scrolling. Progress,
-thumbnail aspect ratio and error slot reserve geometry. There is no fixed-height
-application shell or nested vertical scroller.
+thumbnail aspect ratio and error slot reserve geometry. The application shell
+is natural height. The modal body scrolls with its header and Done button kept
+reachable. Its grid uses four columns on desktop, two below 640px. Tiles crop
+square thumbnails; the expanded viewer contains the complete image or video.
 
 ## Elevation & Depth
 Flat white workspace with a single border. No nested cards or decorative shadows.
@@ -76,7 +86,12 @@ visible focus and disabled semantics. Labels, inputs and help own the URL form.
 Media checkboxes and the select-all checkbox own selection; the latter has an
 indeterminate state. Native select owns quality choice and its popup.
 One inline alert owns errors; the job status live region owns asynchronous feedback.
-No modal or toast system is necessary. Global CSS owns scrollbar behavior.
+The native HTML dialog owns the media picker: showModal makes the background
+inert and traps focus. Escape, backdrop, Close and Done dismiss it and restore
+focus to the opener. `--z-dialog` owns its layer. Closing stops playback and
+releases the stream. Thumbnail buttons expand/play; checkboxes alone change
+selection. Native selects own quality; native video controls own playback.
+Global CSS owns scrollbar behavior. No toast system is necessary.
 The download-arrow mark is inline SVG; no production bitmap asset is required.
 No decorative animation; reduced motion disables any future transitions.
 All user-visible messages and accessible names are Thai, apart from platform names,
