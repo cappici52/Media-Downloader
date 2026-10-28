@@ -89,16 +89,19 @@ def friendly_error(error):
 
 
 class QuietLogger:
-    def debug(self, message):
+    def debug(self, message, *args, **kwargs):
         pass
 
-    def info(self, message):
+    def info(self, message, *args, **kwargs):
         pass
 
-    def warning(self, message):
+    def warning(self, message, *args, **kwargs):
         pass
 
-    def error(self, message):
+    def error(self, message, *args, **kwargs):
+        pass
+
+    def traceback(self, error):
         pass
 
 
@@ -338,6 +341,8 @@ def quality_options(formats):
 
 
 def video_info(url, *, use_cookies=True, instagram_product=None):
+    if instagram_story(url) and use_cookies and instagram_product is None:
+        instagram_product = instagram_story_product(url)
     with make_ydl(ydl_options(use_cookies=use_cookies)) as ydl:
         if instagram_product is None:
             raw = ydl.extract_info(url, download=False)
@@ -376,9 +381,8 @@ def video_info(url, *, use_cookies=True, instagram_product=None):
         return raw, videos
 
 
-def image_info(url, *, use_cookies=True, instagram_product=None):
+def gallery_extractor(url, *, use_cookies=True, instagram_product=None):
     from gallery_dl import config, extractor
-    from gallery_dl.extractor.common import Message
 
     config.clear()
     config.set(("cache",), "file", ":memory:")
@@ -393,13 +397,15 @@ def image_info(url, *, use_cookies=True, instagram_product=None):
     else:
         from gallery_dl.extractor.instagram import InstagramPostExtractor
 
-        class PublicInstagramPostExtractor(InstagramPostExtractor):
+        class ProductInstagramPostExtractor(InstagramPostExtractor):
             def posts(self):
                 return iter((instagram_product,))
 
-        ext = PublicInstagramPostExtractor.from_url(url)
+        product_url = "https://www.instagram.com/p/Story/" if instagram_story(url) else url
+        ext = ProductInstagramPostExtractor.from_url(product_url)
     if ext is None:
         raise MediaError("no_media", "ไม่พบรูปในลิงก์นี้")
+    ext.log = QuietLogger()
     if use_cookies and settings.browser and has_worker_session():
 
         def load_cached_cookies(source):
@@ -410,6 +416,45 @@ def image_info(url, *, use_cookies=True, instagram_product=None):
     # gallery-dl creates its Session lazily, not in extractor.find().
     ext.initialize()
     ext.session.trust_env = False
+    return ext
+
+
+def instagram_story(url):
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    return (host == "instagram.com" or host.endswith(".instagram.com")) and bool(
+        re.fullmatch(r"/stories/(?!highlights/)[^/]+/[0-9]+/?", parts.path)
+    )
+
+
+def instagram_story_product(url):
+    """Read one authorized Story through gallery-dl's authenticated media API."""
+    ext = gallery_extractor(url, use_cookies=True)
+    try:
+        if not has_login_session(ext.session.cookies, url):
+            raise MediaError("login_required", "Story ต้องใช้ session Instagram ของบัญชีที่มีสิทธิ์ดู")
+        ext.login()
+        story_id = urlsplit(url).path.strip("/").split("/")[-1]
+        data = ext.api._call(f"/v1/media/{story_id}/info/")
+        items = data.get("items") or []
+        if not items:
+            raise MediaError("story_unavailable", "ไม่พบ Story นี้ อาจหมดอายุ ถูกลบ หรือบัญชีไม่มีสิทธิ์ดู")
+        product = items[0]
+        reject_unsupported_media(product)
+        if len(product.get("carousel_media") or [product]) > settings.max_items:
+            raise MediaError("item_limit", "Story มีสื่อเกินจำนวนที่กำหนด")
+        return product
+    finally:
+        ext.session.close()
+
+
+def image_info(url, *, use_cookies=True, instagram_product=None):
+    from gallery_dl.extractor.common import Message
+
+    if instagram_story(url) and use_cookies and instagram_product is None:
+        instagram_product = instagram_story_product(url)
+
+    ext = gallery_extractor(url, use_cookies=use_cookies, instagram_product=instagram_product)
     images = []
     for message in ext:
         if message[0] != Message.Url:
@@ -537,7 +582,7 @@ def extract_public_first(adapter, url):
             host == domain or host.endswith("." + domain) for domain in ("x.com", "twitter.com")
         )
         retry_codes = ("login_required", "private", "platform_blocked", "extract_failed")
-        if shortcode or is_x:
+        if shortcode or is_x or instagram_story(url):
             retry_codes += ("no_media",)
         if shortcode and code in retry_codes:
             try:
@@ -596,6 +641,7 @@ def inspect_media(url):
             "cookies_locked",
             "cookies_decryption",
             "cookies_unavailable",
+            "story_unavailable",
             "login_required",
             "platform_blocked",
             "public_unverified",
