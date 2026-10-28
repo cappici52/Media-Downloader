@@ -20,6 +20,7 @@ from .jobs import JobManager, run_worker
 from .settings import settings
 from .validators import URLValidationError, validate_url
 from .streaming import PreviewStream, PreviewResponse
+from .browser_session import browser_session
 
 
 manager = JobManager()
@@ -45,11 +46,13 @@ class ClosingFileResponse(FileResponse):
 @asynccontextmanager
 async def lifespan(app):
     await manager.start()
+    await browser_session.refresh()
     try:
         yield
     finally:
         await manager.close()
         previews.clear()
+        browser_session.clear()
 
 
 app = FastAPI(title="Personal Media Downloader", lifespan=lifespan, docs_url=None, redoc_url=None)
@@ -136,6 +139,18 @@ def prune_previews():
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/session")
+async def session_status():
+    return browser_session.status()
+
+
+@app.post("/session/refresh")
+async def refresh_session(request: Request):
+    if (await request.body()).strip():
+        return error_response("invalid_request", "ไม่รับข้อมูล cookies จากผู้ใช้", 422)
+    return await browser_session.refresh()
 
 
 @app.post("/info")

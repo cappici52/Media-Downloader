@@ -26,6 +26,7 @@ class Settings:
     info_timeout: int = positive("INFO_TIMEOUT_SECONDS", 120)
     root: Path = Path(os.getenv("DOWNLOAD_DIR", "downloads")).resolve()
     browser: str = os.getenv("COOKIES_BROWSER", "")
+    browser_session_ttl: int = positive("BROWSER_SESSION_TTL_SECONDS", 21600)
 
 
 settings = Settings()

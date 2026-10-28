@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from .network import install_network_guard
+from .browser_session import install_worker_session
 from .downloader import (
     download_media,
     download_preview,
@@ -20,6 +21,8 @@ def emit(data):
 
 def main():
     request = json.loads(sys.stdin.readline())
+    if "_browser_session" in request:
+        install_worker_session(request["_browser_session"])
     install_network_guard()
     disable_external_downloaders()
     try:

@@ -17,6 +17,7 @@ from uuid import uuid4
 
 from .downloader import MediaError
 from .settings import settings
+from .browser_session import browser_session
 
 
 def directory_size(directory):
@@ -53,6 +54,11 @@ async def stop_process(process):
 
 
 async def run_worker(request, *, timeout, progress=None, limits=settings):
+    request = dict(request)
+    if request.get("action") in ("info", "download"):
+        snapshot = browser_session.for_url(request.get("url", ""))
+        if snapshot is not None:
+            request["_browser_session"] = snapshot
     kwargs = {"start_new_session": True} if os.name != "nt" else {}
     process = await asyncio.create_subprocess_exec(
         sys.executable,

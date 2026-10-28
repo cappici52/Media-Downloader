@@ -10,6 +10,7 @@ import json
 
 from .settings import settings
 from .validators import URLValidationError, validate_url, validate_network_url
+from .browser_session import has_worker_session, worker_cookie_jar
 
 
 class MediaError(Exception):
@@ -131,7 +132,10 @@ def ydl_options(*, use_cookies=True):
             "safari",
         ):
             raise MediaError("browser", "การตั้งค่าเบราว์เซอร์สำหรับ cookies ไม่ถูกต้อง")
-        options["cookiesfrombrowser"] = (settings.browser,)
+        if has_worker_session():
+            options["_cached_browser_session"] = True
+        else:
+            options["cookiesfrombrowser"] = (settings.browser,)
     return options
 
 
@@ -199,7 +203,12 @@ def make_ydl(options=None):
             # Native curl/impersonation transports bypass Python's socket guard.
             return super().build_request_director([UrllibRH], preferences=[])
 
-    ydl = GuardedYoutubeDL(options or ydl_options())
+    params = dict(options or ydl_options())
+    cached = params.pop("_cached_browser_session", False)
+    ydl = GuardedYoutubeDL(params)
+    if cached:
+        for cookie in worker_cookie_jar():
+            ydl.cookiejar.set_cookie(cookie)
     ydl.add_info_extractor(ScopedTwitterIE(ydl))
     return ydl
 
@@ -315,6 +324,13 @@ def image_info(url, *, use_cookies=True, instagram_product=None):
         ext = PublicInstagramPostExtractor.from_url(url)
     if ext is None:
         raise MediaError("no_media", "ไม่พบรูปในลิงก์นี้")
+    if use_cookies and settings.browser and has_worker_session():
+
+        def load_cached_cookies(source):
+            for cookie in worker_cookie_jar():
+                ext.cookies.set_cookie(cookie)
+
+        ext.cookies_load = load_cached_cookies
     # gallery-dl creates its Session lazily, not in extractor.find().
     ext.initialize()
     ext.session.trust_env = False

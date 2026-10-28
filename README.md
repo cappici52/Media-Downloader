@@ -107,6 +107,30 @@ Docker Compose ส่งต่อค่าหลักจาก `.env`; หา�
 
 ## Cookies จากเครื่องตัวเอง (ตัวเลือกสำหรับ native)
 
+### เปิดหน้าแอปบน Chrome พร้อมใช้ session ล็อกอิน
+
+backend อ่าน cookies จาก browser ตอนเริ่มเซิร์ฟเวอร์ แล้วเก็บเฉพาะโดเมนแพลตฟอร์ม
+ที่รองรับไว้ใน RAM สูงสุด 6 ชั่วโมง Worker รับ session ผ่าน stdin ภายใน process
+ไม่อ่านฐานข้อมูล Chrome ซ้ำ ไม่เขียนไฟล์ cookies และไม่ส่งค่า cookies ไปหน้าเว็บ
+ดังนั้นหลังเตรียม session แล้วสามารถเปิด Chrome ใช้หน้าแอปได้ตามปกติ
+
+บน Windows ให้ปิด Chrome เฉพาะตอนเตรียม session ครั้งแรก แล้วรัน:
+
+```powershell
+.\scripts\start_chrome.ps1
+```
+
+สคริปต์เตรียม session และเปิด Chrome ที่ localhost ให้ เมื่อ session ยังใช้ได้
+รันซ้ำได้โดยไม่ต้องปิด Chrome หรือเริ่มเซิร์ฟเวอร์ใหม่ ต้องเก็บ backend ให้ทำงานอยู่
+หากปิด backend/restart/session หมดอายุ ให้ปิด Chrome อีกครั้งแล้วรันสคริปต์ใหม่
+สคริปต์ไม่บังคับปิด browser ไม่แก้ระบบเข้ารหัส และไม่เปลี่ยน security settings ของ Chrome
+
+`GET /session` แสดงเฉพาะสถานะและเวลา ไม่มีข้อมูลล็อกอิน
+`POST /session/refresh` ไม่รับ body และอ่านใหม่จาก browser ที่เจ้าของเครื่องตั้งค่าไว้
+ใช้หลังปิด Chrome เพื่ออัปเดต session โดยไม่ต้อง restart backend
+ตั้ง `BROWSER_SESSION_TTL_SECONDS` เพื่อเปลี่ยนอายุ cache ได้ (ค่าเริ่มต้น 21600)
+การเตรียม session ไม่ได้รับประกันว่า cookies จะยังล็อกอินอยู่หรือเข้าถึงทุกโพสต์ได้
+
 ค่าเริ่มต้นปิด cookies ไม่มีช่องหรือ API สำหรับอัปโหลด cookies
 ระบบจะลองดึงโพสต์สาธารณะแบบไม่ใช้ cookies ก่อนเสมอ แม้ตั้ง `COOKIES_BROWSER` ไว้
 จึงไม่ต้องปิด Chrome สำหรับโพสต์ที่ดึงแบบสาธารณะได้ หากแพลตฟอร์มขอให้ล็อกอิน
