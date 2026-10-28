@@ -17,8 +17,13 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 
 
 ALLOWED_DOMAINS = (
-    "youtube.com", "youtu.be", "facebook.com", "fb.watch",
-    "instagram.com", "x.com", "twitter.com",
+    "youtube.com",
+    "youtu.be",
+    "facebook.com",
+    "fb.watch",
+    "instagram.com",
+    "x.com",
+    "twitter.com",
 )
 MAX_URL_LENGTH = 8192
 MAX_REDIRECTS = 5
@@ -49,15 +54,25 @@ def _public_address(value: str) -> str:
     mapped = getattr(address, "ipv4_mapped", None)
     checked = mapped or address
     if (
-        not checked.is_global or checked.is_multicast or checked.is_reserved
+        not checked.is_global
+        or checked.is_multicast
+        or checked.is_reserved
         or getattr(checked, "is_site_local", False)
         or getattr(address, "scope_id", None)
         or getattr(address, "sixtofour", None)
         or getattr(address, "teredo", None)
-    ):
-        raise URLValidationError(
-            "unsafe_address", "ไม่อนุญาตลิงก์ที่ชี้ไปยังเครือข่ายภายในหรือที่อยู่พิเศษ"
+        or (
+            address.version == 6
+            and any(
+                address in network
+                for network in (
+                    ipaddress.ip_network("64:ff9b::/96"),
+                    ipaddress.ip_network("64:ff9b:1::/48"),
+                )
+            )
         )
+    ):
+        raise URLValidationError("unsafe_address", "ไม่อนุญาตลิงก์ที่ชี้ไปยังเครือข่ายภายในหรือที่อยู่พิเศษ")
     return str(address)
 
 
@@ -81,7 +96,9 @@ def _validate(url: str, *, platform_only: bool) -> ValidatedURL:
         raise URLValidationError("credentials_not_allowed", "ไม่อนุญาตลิงก์ที่ฝังชื่อผู้ใช้หรือรหัสผ่าน")
     hostname = hostname.lower()
     # ASCII DNS names only; percent-encoded hosts and trailing dots are rejected.
-    if len(hostname) > 253 or any(not _HOST_LABEL.fullmatch(label) for label in hostname.split(".")):
+    if len(hostname) > 253 or any(
+        not _HOST_LABEL.fullmatch(label) for label in hostname.split(".")
+    ):
         raise URLValidationError("invalid_host", "ชื่อเว็บไซต์ในลิงก์ไม่ถูกต้อง")
     expected_port = 443 if parts.scheme.lower() == "https" else 80
     if port is not None and port != expected_port:
@@ -134,7 +151,10 @@ def validate_redirect(
         raise URLValidationError("too_many_redirects", "เว็บไซต์เปลี่ยนเส้นทางหลายครั้งเกินไป")
     if not isinstance(location, str) or not location or len(location) > MAX_URL_LENGTH:
         raise URLValidationError("invalid_redirect", "เว็บไซต์ส่งเส้นทางใหม่ที่ไม่ถูกต้อง")
-    if any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in location) or "\\" in location:
+    if (
+        any(char.isspace() or ord(char) < 32 or ord(char) == 127 for char in location)
+        or "\\" in location
+    ):
         raise URLValidationError("invalid_redirect", "เว็บไซต์ส่งเส้นทางใหม่ที่ไม่ถูกต้อง")
     target = urljoin(current.url, location)
     return validate_network_url(target) if media else validate_url(target)

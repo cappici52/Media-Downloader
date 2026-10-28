@@ -1,0 +1,42 @@
+name: Verify application
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m ruff check backend tests scripts
+      - run: python -m ruff format --check backend tests scripts
+      - run: python -m unittest discover -s tests -v
+      - run: node --check frontend/app.js
+      - run: docker compose config --quiet
+      - run: docker build -t media-downloader:ci .
+      - name: Smoke test container
+        run: |
+          docker run -d --name media-ci -p 127.0.0.1:8000:8000 --read-only --tmpfs /tmp --tmpfs /app/downloads:uid=10001,gid=10001 media-downloader:ci
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8000/health; then break; fi
+            sleep 2
+          done
+          curl --fail http://127.0.0.1:8000/health
+          curl --fail http://127.0.0.1:8000/ > /dev/null
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' -H 'Content-Type: application/json' -d '{"url":"http://127.0.0.1"}' http://127.0.0.1:8000/info)" = 400
+          docker exec media-ci ffmpeg -version
+          docker exec media-ci ffprobe -version
+          docker exec media-ci node --version
+      - if: always()
+        run: docker logs media-ci || true

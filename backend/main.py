@@ -1,4 +1,5 @@
 """FastAPI endpoints for the private, single-process localhost application."""
+
 from contextlib import asynccontextmanager
 import asyncio
 import copy
@@ -11,8 +12,8 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
-from starlette.background import BackgroundTask
 from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.exceptions import HTTPException
 
 from .downloader import MediaError
 from .jobs import JobManager, run_worker
@@ -25,6 +26,20 @@ previews = {}
 ROOT = Path(__file__).resolve().parent.parent
 
 
+class ClosingFileResponse(FileResponse):
+    """Release file leases even if the browser disconnects while receiving."""
+
+    def __init__(self, *args, on_close, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.on_close = on_close
+
+    async def __call__(self, scope, receive, send):
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            self.on_close()
+
+
 @asynccontextmanager
 async def lifespan(app):
     await manager.start()
@@ -35,7 +50,7 @@ async def lifespan(app):
         previews.clear()
 
 
-app = FastAPI(title="Personal Media Downloader", lifespan=lifespan)
+app = FastAPI(title="Personal Media Downloader", lifespan=lifespan, docs_url=None, redoc_url=None)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]"])
 
 
@@ -62,7 +77,9 @@ async def private_request_policy(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["Cache-Control"] = "no-store"
-    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+    )
     return response
 
 
@@ -82,6 +99,14 @@ async def media_error(request, error):
 @app.exception_handler(RequestValidationError)
 async def invalid_request(request, error):
     return error_response("invalid_request", "ข้อมูลไม่ถูกต้อง กรุณาตรวจสอบลิงก์และรายการที่เลือก", 422)
+
+
+@app.exception_handler(HTTPException)
+async def http_error(request, error):
+    message = (
+        "ไม่พบหน้าหรือไฟล์นี้" if error.status_code == 404 else "ไม่สามารถทำรายการนี้ได้ กรุณาตรวจสอบคำขอ"
+    )
+    return error_response("http_error", message, error.status_code)
 
 
 class InfoRequest(BaseModel):
@@ -121,6 +146,7 @@ async def info(payload: InfoRequest):
         previews.pop(next(iter(previews)))
     identifier = uuid4().hex
     urls = []
+
     def proxy_thumbnail(item):
         thumbnail = item.get("thumbnail")
         if isinstance(thumbnail, str) and thumbnail.startswith(("https://", "http://")):
@@ -128,12 +154,18 @@ async def info(payload: InfoRequest):
             item["thumbnail"] = f"/thumbnails/{identifier}/{len(urls) - 1}"
         else:
             item["thumbnail"] = None
+
     proxy_thumbnail(result)
     for item in result.get("items", []):
         proxy_thumbnail(item)
     result["images"] = [item for item in result.get("items", []) if item["type"] == "image"]
     previews[identifier] = {"urls": urls, "expires": time.time() + settings.ttl}
-    result["limits"] = {"max_file_mb": settings.max_bytes // (1024 * 1024), "max_duration_seconds": settings.max_duration, "max_items": settings.max_items, "ttl_seconds": settings.ttl}
+    result["limits"] = {
+        "max_file_mb": settings.max_bytes // (1024 * 1024),
+        "max_duration_seconds": settings.max_duration,
+        "max_items": settings.max_items,
+        "ttl_seconds": settings.ttl,
+    }
     return result
 
 
@@ -168,9 +200,11 @@ async def file_download(identifier: str):
     if not path.is_file() or path.is_symlink():
         return error_response("file_missing", "ไม่พบไฟล์ กรุณาดาวน์โหลดใหม่", 404)
     job.readers += 1
+
     def release():
         job.readers -= 1
-    return FileResponse(path, filename=job.filename, background=BackgroundTask(release))
+
+    return ClosingFileResponse(path, filename=job.filename, on_close=release)
 
 
 @app.get("/thumbnails/{identifier}/{index}")
@@ -185,8 +219,15 @@ async def thumbnail(identifier: str, index: int):
     directory.mkdir()
     try:
         async with manager.slots:
-            result = await run_worker({"action": "preview", "url": entry["urls"][index], "directory": str(directory)}, timeout=30)
-        return FileResponse(directory / result["filename"], media_type=result["media_type"], background=BackgroundTask(shutil.rmtree, directory, True))
+            result = await run_worker(
+                {"action": "preview", "url": entry["urls"][index], "directory": str(directory)},
+                timeout=30,
+            )
+        return ClosingFileResponse(
+            directory / result["filename"],
+            media_type=result["media_type"],
+            on_close=lambda: shutil.rmtree(directory, True),
+        )
     except BaseException:
         await asyncio.to_thread(shutil.rmtree, directory, True)
         raise

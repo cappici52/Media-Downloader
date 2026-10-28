@@ -1,26 +1,54 @@
-import socket
 import unittest
+from dataclasses import replace
 from unittest.mock import patch
-from backend.downloader import MediaError, friendly_error, quality_options, allowed_format
+from backend import downloader
+from backend.downloader import MediaError, assert_public, friendly_error, quality_options
 
 
 class DownloaderTests(unittest.TestCase):
+    def test_private_content_is_rejected_even_with_browser_cookies(self):
+        with patch.object(downloader, "settings", replace(downloader.settings, browser="firefox")):
+            for metadata in ({"availability": "private"}, {"owner": {"is_private": True}}, {}):
+                with self.subTest(metadata=metadata), self.assertRaises(MediaError):
+                    assert_public(metadata)
+            assert_public({"availability": "public"})
+            assert_public({"user": {"protected": False}})
+
     def test_quality_options_exclude_drm_and_external_protocols(self):
         def fmt(height, **extra):
-            return {"protocol": "https", "url": "https://cdn.example/a", "height": height, "vcodec": "avc", "acodec": "aac", **extra}
-        options = quality_options([fmt(360), fmt(720), fmt(720), fmt(1080, has_drm=True), fmt(2160, protocol="m3u8")])
+            return {
+                "protocol": "https",
+                "url": "https://cdn.example/a",
+                "height": height,
+                "vcodec": "avc",
+                "acodec": "aac",
+                **extra,
+            }
+
+        options = quality_options(
+            [fmt(360), fmt(720), fmt(720), fmt(1080, has_drm=True), fmt(2160, protocol="m3u8")]
+        )
         self.assertEqual([q["id"] for q in options], ["360p", "720p", "mp3"])
 
     def test_errors_are_thai_and_hide_raw_secrets(self):
-        for text, code in (("please login", "login_required"), ("private post", "private"), ("HTTP 429", "platform_blocked"), ("404 not found", "no_media"), ("connection timeout", "network"), ("secret-token", "extract_failed")):
+        for text, code in (
+            ("please login", "login_required"),
+            ("private post", "private"),
+            ("HTTP 429", "platform_blocked"),
+            ("404 not found", "no_media"),
+            ("connection timeout", "network"),
+            ("secret-token", "extract_failed"),
+        ):
             result = friendly_error(Exception(text))
             self.assertEqual(result["code"], code)
             self.assertNotIn(text, result["message"])
         self.assertEqual(friendly_error(MediaError("limit", "เกินขนาด"))["code"], "limit")
 
     def test_socket_guard_in_disposable_process(self):
-        import subprocess, sys
-        code = '''from backend.network import install_network_guard
+        import subprocess
+        import sys
+
+        code = """from backend.network import install_network_guard
 import socket
 install_network_guard()
 for host in ("127.0.0.1", "169.254.169.254", "::1", "10.0.0.1"):
@@ -30,9 +58,17 @@ for host in ("127.0.0.1", "169.254.169.254", "::1", "10.0.0.1"):
 try: socket.socket().connect(("youtube.com", 443))
 except ValueError: pass
 else: raise AssertionError("implicit DNS allowed")
-print("ok")'''
-        result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=10)
+import urllib.request
+for url in ("file:///etc/passwd", "ftp://example.com/file", "data:text/plain,secret"):
+    try: urllib.request.urlopen(url)
+    except ValueError: pass
+    else: raise AssertionError("non-HTTP URL allowed")
+print("ok")"""
+        result = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True, timeout=10
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
-if __name__ == "__main__": unittest.main()
+if __name__ == "__main__":
+    unittest.main()

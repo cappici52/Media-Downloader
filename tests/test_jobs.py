@@ -22,6 +22,7 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
             kwargs["progress"]({"progress": 55, "phase": "downloading"})
             (Path(request["directory"]) / "media.jpg").write_bytes(b"image")
             return {"filename": "media.jpg"}
+
         manager = JobManager(self.limits, fake)
         await manager.start()
         try:
@@ -54,12 +55,16 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_worker_rejects_invalid_url_in_real_subprocess(self):
         with self.assertRaises(MediaError) as error:
-            await run_worker({"action": "info", "url": "file:///etc/passwd"}, timeout=20, limits=self.limits)
+            await run_worker(
+                {"action": "info", "url": "file:///etc/passwd"}, timeout=20, limits=self.limits
+            )
         self.assertEqual(error.exception.code, "invalid_scheme")
 
     async def test_timeout_kills_real_worker(self):
         with self.assertRaises(MediaError) as error:
-            await run_worker({"action": "info", "url": "https://youtube.com"}, timeout=.001, limits=self.limits)
+            await run_worker(
+                {"action": "info", "url": "https://youtube.com"}, timeout=0.001, limits=self.limits
+            )
         self.assertEqual(error.exception.code, "timeout")
 
     async def test_restart_only_removes_owned_directories(self):

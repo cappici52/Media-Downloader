@@ -1,10 +1,17 @@
 """One request per disposable process; stdout is a JSON-lines protocol."""
+
 import json
 import sys
 from pathlib import Path
 
 from .network import install_network_guard
-from .downloader import download_media, download_preview, inspect_media, friendly_error, disable_external_downloaders
+from .downloader import (
+    download_media,
+    download_preview,
+    inspect_media,
+    friendly_error,
+    disable_external_downloaders,
+)
 
 
 def emit(data):
@@ -19,7 +26,11 @@ def main():
         if request["action"] == "info":
             result = inspect_media(request["url"])[0]
         elif request["action"] == "download":
-            result = {"filename": download_media(request["url"], request["selections"], Path(request["directory"]), emit).name}
+            result = {
+                "filename": download_media(
+                    request["url"], request["selections"], Path(request["directory"]), emit
+                ).name
+            }
         elif request["action"] == "preview":
             result = download_preview(request["url"], Path(request["directory"]))
         else:

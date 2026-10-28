@@ -3,15 +3,24 @@ import unittest
 from unittest.mock import patch
 
 from backend.validators import (
-    ALLOWED_DOMAINS, MAX_URL_LENGTH, URLValidationError,
-    validate_network_url, validate_redirect, validate_url,
+    ALLOWED_DOMAINS,
+    MAX_URL_LENGTH,
+    URLValidationError,
+    validate_network_url,
+    validate_redirect,
+    validate_url,
 )
 
 
 def dns_records(*addresses):
     return [
-        (socket.AF_INET6 if ":" in address else socket.AF_INET,
-         socket.SOCK_STREAM, 6, "", (address, 443))
+        (
+            socket.AF_INET6 if ":" in address else socket.AF_INET,
+            socket.SOCK_STREAM,
+            6,
+            "",
+            (address, 443),
+        )
         for address in addresses
     ]
 
@@ -50,21 +59,44 @@ class ValidatorTests(unittest.TestCase):
         self.resolver.assert_called_once_with("youtu.be", 80, type=socket.SOCK_STREAM)
 
     def test_lookalikes_rejected_before_dns(self):
-        for host in ("evilyoutube.com", "youtube.com.evil.test", "notx.com", "example.com", "localhost"):
+        for host in (
+            "evilyoutube.com",
+            "youtube.com.evil.test",
+            "notx.com",
+            "example.com",
+            "localhost",
+        ):
             with self.subTest(host=host):
                 self.assert_rejected("https://" + host, "unsupported_domain")
         self.resolver.assert_not_called()
 
     def test_malformed_and_ambiguous_inputs(self):
         for url in (
-            None, 12, "", " " , "x" * (MAX_URL_LENGTH + 1),
-            "https://", "https:///youtube.com", "//youtube.com", "youtube.com",
-            "https://youtube.com:abc", "https://youtube.com:65536", "https://youtube.com:",
-            "https://[broken", "https://youtube.com./", "https://%79outube.com/",
-            "https://you\u0442ube.com/", "https://-a.youtube.com", "https://a..youtube.com",
-            "https://youtube.com\\@evil.test", "https://youtube.com/\nfoo",
-            " https://youtube.com", "https://youtube.com/a b", "https://youtube.com/\x7f",
-            "https://youtube.com/\tfoo", "https://youtube.com/\u00a0",
+            None,
+            12,
+            "",
+            " ",
+            "x" * (MAX_URL_LENGTH + 1),
+            "https://",
+            "https:///youtube.com",
+            "//youtube.com",
+            "youtube.com",
+            "https://youtube.com:abc",
+            "https://youtube.com:65536",
+            "https://youtube.com:",
+            "https://[broken",
+            "https://youtube.com./",
+            "https://%79outube.com/",
+            "https://you\u0442ube.com/",
+            "https://-a.youtube.com",
+            "https://a..youtube.com",
+            "https://youtube.com\\@evil.test",
+            "https://youtube.com/\nfoo",
+            " https://youtube.com",
+            "https://youtube.com/a b",
+            "https://youtube.com/\x7f",
+            "https://youtube.com/\tfoo",
+            "https://youtube.com/\u00a0",
         ):
             with self.subTest(url=str(url)[:100]):
                 self.assert_rejected(url)
@@ -77,25 +109,56 @@ class ValidatorTests(unittest.TestCase):
 
     def test_credentials_and_ports(self):
         for url in (
-            "https://user:pass@youtube.com", "https://@youtube.com",
-            "https://youtube.com@127.0.0.1", "https://youtube.com:80",
-            "http://youtube.com:443", "https://youtube.com:8080", "https://youtube.com:0",
+            "https://user:pass@youtube.com",
+            "https://@youtube.com",
+            "https://youtube.com@127.0.0.1",
+            "https://youtube.com:80",
+            "http://youtube.com:443",
+            "https://youtube.com:8080",
+            "https://youtube.com:0",
         ):
             with self.subTest(url=url):
                 self.assert_rejected(url)
 
     def test_ip_literals_rejected_even_for_media(self):
-        for host in ("127.0.0.1", "10.0.0.1", "192.168.1.1", "8.8.8.8", "[::1]", "[2606:4700::1111]"):
+        for host in (
+            "127.0.0.1",
+            "10.0.0.1",
+            "192.168.1.1",
+            "8.8.8.8",
+            "[::1]",
+            "[2606:4700::1111]",
+        ):
             with self.subTest(host=host):
                 self.assert_rejected("https://" + host, validator=validate_network_url)
 
     def test_unsafe_dns_including_ipv6_and_mapped_addresses(self):
         for address in (
-            "127.0.0.1", "10.0.0.1", "172.16.0.1", "192.168.1.1", "169.254.169.254",
-            "0.0.0.0", "100.64.0.1", "192.0.2.1", "198.18.0.1", "224.0.0.1", "255.255.255.255",
-            "::", "::1", "fc00::1", "fe80::1", "fec0::1", "ff02::1", "2001:db8::1",
-            "::ffff:127.0.0.1", "::ffff:10.0.0.1", "fe80::1%eth0",
-            "2002:7f00:0001::1", "not-an-ip",
+            "127.0.0.1",
+            "10.0.0.1",
+            "172.16.0.1",
+            "192.168.1.1",
+            "169.254.169.254",
+            "0.0.0.0",
+            "100.64.0.1",
+            "192.0.2.1",
+            "198.18.0.1",
+            "224.0.0.1",
+            "255.255.255.255",
+            "::",
+            "::1",
+            "fc00::1",
+            "fe80::1",
+            "fec0::1",
+            "ff02::1",
+            "2001:db8::1",
+            "::ffff:127.0.0.1",
+            "::ffff:10.0.0.1",
+            "fe80::1%eth0",
+            "2002:7f00:0001::1",
+            "not-an-ip",
+            "64:ff9b::7f00:1",
+            "64:ff9b:1::a00:1",
         ):
             with self.subTest(address=address):
                 self.resolver.return_value = dns_records(address)
@@ -156,7 +219,14 @@ class ValidatorTests(unittest.TestCase):
 
     def test_invalid_redirect_locations_and_hops(self):
         current = validate_url("https://youtube.com")
-        for location in (None, "", "\nhttps://youtube.com", "\\evil.test", "x" * (MAX_URL_LENGTH + 1), "file:///etc/passwd"):
+        for location in (
+            None,
+            "",
+            "\nhttps://youtube.com",
+            "\\evil.test",
+            "x" * (MAX_URL_LENGTH + 1),
+            "file:///etc/passwd",
+        ):
             with self.subTest(location=str(location)[:80]), self.assertRaises(URLValidationError):
                 validate_redirect(current, location, hop=1)
         for hop in (0, -1, 6, True, 1.5, "1"):

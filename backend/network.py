@@ -5,15 +5,23 @@ checked again. Redirects therefore cannot reach private networks, even after DNS
 rebinding. No process-wide monkeypatch is ever installed in the web server.
 External downloader processes are forbidden; ffmpeg gets local files only.
 """
+
 import os
 import socket
-from .validators import URLValidationError, _public_address
+import urllib.request
+from .validators import MAX_REDIRECTS, URLValidationError, _public_address, validate_network_url
 
 
 def install_network_guard():
     original_dns = socket.getaddrinfo
     original_connect = socket.socket.connect
     original_connect_ex = socket.socket.connect_ex
+    original_open = urllib.request.OpenerDirector.open
+
+    def open_url(opener, fullurl, *args, **kwargs):
+        target = fullurl.full_url if isinstance(fullurl, urllib.request.Request) else fullurl
+        validate_network_url(target)
+        return original_open(opener, fullurl, *args, **kwargs)
 
     def dns(host, port, *args, **kwargs):
         records = original_dns(host, port, *args, **kwargs)
@@ -44,6 +52,11 @@ def install_network_guard():
     socket.socket.connect = connect
     socket.socket.connect_ex = connect_ex
     socket.socket.sendto = deny_datagram
+    urllib.request.OpenerDirector.open = open_url
+    urllib.request.HTTPRedirectHandler.max_redirections = MAX_REDIRECTS
+    import requests.sessions
+
+    requests.sessions.DEFAULT_REDIRECT_LIMIT = MAX_REDIRECTS
     socket.setdefaulttimeout(20)
     for name in list(os.environ):
         if name.lower().endswith("_proxy"):

@@ -3,6 +3,7 @@
 Run one ASGI process: queue state is deliberately local. Restart discards jobs
 and removes orphaned files; this app is not a persistent/public download service.
 """
+
 import asyncio
 from dataclasses import dataclass, field
 import json
@@ -34,8 +35,13 @@ async def stop_process(process):
         return
     if os.name == "nt":
         killer = await asyncio.create_subprocess_exec(
-            "taskkill", "/PID", str(process.pid), "/T", "/F",
-            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+            "taskkill",
+            "/PID",
+            str(process.pid),
+            "/T",
+            "/F",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
         )
         await killer.wait()
     else:
@@ -49,11 +55,17 @@ async def stop_process(process):
 async def run_worker(request, *, timeout, progress=None, limits=settings):
     kwargs = {"start_new_session": True} if os.name != "nt" else {}
     process = await asyncio.create_subprocess_exec(
-        sys.executable, "-m", "backend.worker",
+        sys.executable,
+        "-m",
+        "backend.worker",
         cwd=str(Path(__file__).resolve().parent.parent),
-        stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL, limit=8 * 1024 * 1024, **kwargs,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+        limit=8 * 1024 * 1024,
+        **kwargs,
     )
+
     async def communicate():
         process.stdin.write((json.dumps(request) + "\n").encode())
         await process.stdin.drain()
@@ -67,7 +79,9 @@ async def run_worker(request, *, timeout, progress=None, limits=settings):
             if not isinstance(event, dict):
                 continue
             if event.get("event") == "error":
-                raise MediaError(event.get("code", "worker"), event.get("message", "ดาวน์โหลดไม่สำเร็จ"))
+                raise MediaError(
+                    event.get("code", "worker"), event.get("message", "ดาวน์โหลดไม่สำเร็จ")
+                )
             if event.get("event") == "result":
                 result = event["data"]
             elif event.get("event") == "progress" and progress:
@@ -79,8 +93,12 @@ async def run_worker(request, *, timeout, progress=None, limits=settings):
 
     async def monitor():
         while True:
-            await asyncio.sleep(.25)
-            if request.get("directory") and await asyncio.to_thread(directory_size, Path(request["directory"])) > limits.max_bytes:
+            await asyncio.sleep(0.25)
+            if (
+                request.get("directory")
+                and await asyncio.to_thread(directory_size, Path(request["directory"]))
+                > limits.max_bytes
+            ):
                 raise MediaError("size_limit", "ไฟล์รวมมีขนาดเกินที่กำหนด")
             if await asyncio.to_thread(directory_size, limits.root) > limits.max_storage:
                 raise MediaError("storage_limit", "พื้นที่เก็บไฟล์เต็ม กรุณารอระบบล้างไฟล์เก่า")
@@ -88,7 +106,9 @@ async def run_worker(request, *, timeout, progress=None, limits=settings):
     communication = asyncio.create_task(communicate())
     monitoring = asyncio.create_task(monitor())
     try:
-        done, _ = await asyncio.wait((communication, monitoring), timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+        done, _ = await asyncio.wait(
+            (communication, monitoring), timeout=timeout, return_when=asyncio.FIRST_COMPLETED
+        )
         if not done:
             raise MediaError("timeout", "งานใช้เวลานานเกินกำหนด กรุณาลองใหม่")
         for task in done:
@@ -119,11 +139,17 @@ class Job:
     readers: int = 0
 
     def public(self):
-        return {"id": self.id, "status": self.status, "progress": self.progress,
-                "phase": self.phase, "created_at": self.created_at,
-                "finished_at": self.finished_at, "error": self.error,
-                "file_url": f"/files/{self.id}" if self.status == "completed" else None,
-                "filename": self.filename}
+        return {
+            "id": self.id,
+            "status": self.status,
+            "progress": self.progress,
+            "phase": self.phase,
+            "created_at": self.created_at,
+            "finished_at": self.finished_at,
+            "error": self.error,
+            "file_url": f"/files/{self.id}" if self.status == "completed" else None,
+            "filename": self.filename,
+        }
 
 
 class JobManager:
@@ -139,7 +165,12 @@ class JobManager:
         self.limits.root.mkdir(parents=True, exist_ok=True)
         # Only remove UUID-owned directories, never arbitrary contents of DOWNLOAD_DIR.
         for path in self.limits.root.iterdir():
-            if path.is_dir() and not path.is_symlink() and len(path.name) == 32 and all(c in "0123456789abcdef" for c in path.name):
+            if (
+                path.is_dir()
+                and not path.is_symlink()
+                and len(path.name) == 32
+                and all(c in "0123456789abcdef" for c in path.name)
+            ):
                 await asyncio.to_thread(shutil.rmtree, path)
         self.tasks = [asyncio.create_task(self._consumer()) for _ in range(self.limits.workers)]
         self.tasks.append(asyncio.create_task(self._janitor()))
@@ -155,7 +186,10 @@ class JobManager:
             raise MediaError("queue_full", "คิวงานเต็ม กรุณารอสักครู่แล้วลองใหม่")
         if len(self.jobs) >= self.limits.max_history:
             raise MediaError("history_full", "มีงานในระบบครบจำนวนแล้ว กรุณารอระบบล้างงานเก่า")
-        if await asyncio.to_thread(directory_size, self.limits.root) + self.limits.max_bytes > self.limits.max_storage:
+        if (
+            await asyncio.to_thread(directory_size, self.limits.root) + self.limits.max_bytes
+            > self.limits.max_storage
+        ):
             raise MediaError("storage_limit", "พื้นที่เก็บไฟล์ไม่เพียงพอ กรุณารอระบบล้างไฟล์เก่า")
         identifier = uuid4().hex
         directory = self.limits.root / identifier
@@ -174,7 +208,9 @@ class JobManager:
         if self.slots.locked():
             raise MediaError("busy", "ระบบกำลังทำงานเต็มจำนวน กรุณารอสักครู่")
         async with self.slots:
-            return await self.worker({"action": "info", "url": url}, timeout=self.limits.info_timeout, limits=self.limits)
+            return await self.worker(
+                {"action": "info", "url": url}, timeout=self.limits.info_timeout, limits=self.limits
+            )
 
     async def _consumer(self):
         while True:
@@ -183,12 +219,21 @@ class JobManager:
                 async with self.slots:
                     job.status = "running"
                     job.phase = "inspecting"
+
                     def update(event):
                         job.progress = max(job.progress, min(99, float(event.get("progress", 0))))
                         job.phase = event.get("phase", "downloading")
+
                     result = await self.worker(
-                        {"action": "download", "url": job.url, "selections": job.selections, "directory": str(job.directory)},
-                        timeout=self.limits.timeout, progress=update, limits=self.limits,
+                        {
+                            "action": "download",
+                            "url": job.url,
+                            "selections": job.selections,
+                            "directory": str(job.directory),
+                        },
+                        timeout=self.limits.timeout,
+                        progress=update,
+                        limits=self.limits,
                     )
                     filename = result["filename"]
                     if Path(filename).name != filename or not (job.directory / filename).is_file():
@@ -203,7 +248,12 @@ class JobManager:
             except Exception as error:
                 job.status = "failed"
                 job.phase = "failed"
-                job.error = {"code": getattr(error, "code", "job_failed"), "message": str(error) if isinstance(error, MediaError) else "ดาวน์โหลดไม่สำเร็จ กรุณาลองใหม่"}
+                job.error = {
+                    "code": getattr(error, "code", "job_failed"),
+                    "message": str(error)
+                    if isinstance(error, MediaError)
+                    else "ดาวน์โหลดไม่สำเร็จ กรุณาลองใหม่",
+                }
                 await asyncio.to_thread(shutil.rmtree, job.directory, True)
             finally:
                 job.finished_at = time.time()
@@ -212,9 +262,13 @@ class JobManager:
     async def cleanup(self):
         now = time.time()
         for identifier, job in list(self.jobs.items()):
-            if job.finished_at is not None and now - job.finished_at >= self.limits.ttl and not job.readers:
-                await asyncio.to_thread(shutil.rmtree, job.directory, True)
+            if (
+                job.finished_at is not None
+                and now - job.finished_at >= self.limits.ttl
+                and not job.readers
+            ):
                 self.jobs.pop(identifier, None)
+                await asyncio.to_thread(shutil.rmtree, job.directory, True)
 
     async def _janitor(self):
         while True:
