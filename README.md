@@ -277,7 +277,7 @@ tests ใช้ fixture/mocks เพื่อทดสอบ URL, SSRF guard, ad
 ## ข้อจำกัด
 
 - โพสต์ส่วนตัวต้องใช้บัญชีที่มีสิทธิ์ดู; โพสต์ที่ถูกลบ อยู่หลัง paywall หรือมี DRM ไม่รองรับ
-- ไม่รองรับ livestream และไม่ไล่เก็บทั้ง profile/playlist ผ่าน gallery queue
+- ไม่รองรับ livestream และ playlist; โปรไฟล์ Instagram อ่านเป็นหน้าและเลือกดาวน์โหลดเป็นชุด
 - Facebook/Instagram/X อาจบังคับล็อกอินหรือบล็อก extractor ได้แม้โพสต์เป็นสาธารณะ
 - รองรับเฉพาะรูปแบบที่โหลดผ่าน HTTP/HTTPS และ native HLS/DASH ได้อย่างปลอดภัย
   รูปแบบที่ต้องใช้ impersonation หรือ ffmpeg เชื่อมเครือข่ายจะถูกปฏิเสธ
@@ -288,3 +288,26 @@ tests ใช้ fixture/mocks เพื่อทดสอบ URL, SSRF guard, ad
 [YouTube JavaScript runtime](https://github.com/yt-dlp/yt-dlp/wiki/EJS),
 [gallery-dl](https://github.com/mikf/gallery-dl),
 [OWASP SSRF prevention](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html)
+
+## ดาวน์โหลดจากโปรไฟล์ Instagram
+
+วางลิงก์ `https://www.instagram.com/USERNAME/` เพื่ออ่านโพสต์หน้าแรก
+เลือกโพสต์ในกริด หรือกดภาพปกเพื่อดูสื่อในโพสต์นั้น แล้วกลับมาเลือกโพสต์ต่อได้
+กด **โหลดเพิ่ม** หรือ **อ่านโพสต์ทั้งหมด** เพื่ออ่านทีละหน้าจนสุด กด **หยุดอ่าน** ได้
+โดยรายการที่อ่านแล้วและตัวเลือกเดิมจะยังอยู่ การอ่านล้มเหลวจะไม่แสดงว่าอ่านครบ
+
+หลายโพสต์รวมเป็น `profile.zip` แยกโฟลเดอร์ตามโพสต์และไม่สร้าง ZIP ซ้อนกัน
+วิดีโอเลือกคุณภาพสูงสุดที่ไม่เกิน 720p เมื่อมีให้เลือก หากต้องการคุณภาพอื่น
+ให้เปิดโพสต์แล้วดาวน์โหลดแยก
+
+- บัญชีส่วนตัวต้องมี session ของบัญชีที่ได้รับสิทธิ์ดูแล้ว
+- อ่านได้สูงสุด 1,000 โพสต์หรือ 100 หน้าต่อรอบ ไม่รับประกันโพสต์ที่ถูกซ่อน/ลบ
+- `MAX_ITEMS` และ `MAX_FILE_MB` นับรวมสื่อทั้งหมดในงาน ไม่ใช่เฉพาะจำนวนโพสต์
+- หากเกินขีดจำกัดหรือ `JOB_TIMEOUT_SECONDS` ให้แบ่งดาวน์โหลดเป็นชุดเล็กลง
+- Instagram อาจจำกัดคำขอหรือเปลี่ยน query ได้ รายการที่อ่านแล้วจะยังอยู่ให้ลองใหม่
+- `/info` รับ `cursor` สำหรับหน้าถัดไป ใช้ค่าที่ API คืนมาโดยตรงโดยไม่แก้ไข
+- `/download` รับ selection `{"id":"post-POST_CODE"}` เมื่อ URL เป็นโปรไฟล์
+
+ตัวอ่านโปรไฟล์ใช้ metadata query ของหน้าเว็บและรองรับ JSON stream/cursor
+เนื่องจาก Instagram เปลี่ยน relay parameters บ่อย ดูรายงานต้นทาง
+[gallery-dl #9829](https://github.com/mikf/gallery-dl/issues/9829) สำหรับข้อจำกัดของ extractor

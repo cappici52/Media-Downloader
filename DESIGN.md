@@ -103,3 +103,17 @@ standard formats and product name.
 - Do show unknown progress as indeterminate, and provide a file link after completion.
 - Don't put source URLs or browser cookies in browser storage; only a job ID is persisted in sessionStorage.
 - Private posts require the user's own authenticated browser session with access granted by the provider. Never imply DRM or paywall bypass is supported.
+
+## Instagram profile selection
+
+The existing URL form and `renderMedia` picker own profile discovery. Profile cards
+reuse preview buttons, checkboxes, focus rings and the dark grid. Each card shows
+a cover, caption and media count. Opening a cover inspects the individual post;
+return restores selected posts and focus. Native quality selects remain canonical
+for individual posts. Profile ZIP downloads prefer video up to 720p.
+
+Pagination uses Load more or Read all posts, with Stop. Partial results and
+selections survive errors and retries. A new URL cancels requests and stale
+responses cannot replace it. Empty results explain possible access restrictions.
+Read all is bounded to 1,000 posts/100 pages. Aggregate media and byte limits
+still apply per download. Existing alerts, progress and job recovery stay shared.

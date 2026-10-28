@@ -24,7 +24,7 @@
       </ol>
 
       <form id="link-form" novalidate>
-        <label class="field-label" for="url">ลิงก์วิดีโอหรือโพสต์</label>
+        <label class="field-label" for="url">ลิงก์วิดีโอ โพสต์ หรือโปรไฟล์ Instagram</label>
         <div class="link-controls">
           <input id="url" name="url" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="วางลิงก์ที่นี่ เช่น https://youtu.be/…" aria-describedby="url-help error-message" maxlength="8192">
           <button class="primary check-button" id="inspect" type="submit">ตรวจสอบ</button>
@@ -46,6 +46,7 @@
             <div class="preview-copy"><h3 id="media-title"></h3><p class="help" id="media-meta"></p><p class="help" id="download-note">เลือกได้ทั้งวิดีโอและรูปภาพ หลายรายการจะรวมเป็นไฟล์ ZIP</p></div>
           </div>
           <button id="open-picker" class="secondary" type="button" disabled>ดูตัวอย่างและเลือกสื่อ</button>
+          <button id="return-profile" disabled class="secondary" type="button" hidden>กลับไปเลือกโพสต์ในโปรไฟล์</button>
         </div>
       </section>
 
@@ -66,6 +67,16 @@
       <button id="close-picker" class="picker-close" type="button" aria-label="ปิดกล่องเลือกสื่อ" disabled>×</button>
     </header>
     <div class="picker-toolbar"><label><input id="select-all" type="checkbox" checked> เลือกทั้งหมด</label><span id="picker-count" role="status" aria-live="polite"></span></div>
+    <button id="return-profile-picker" disabled class="viewer-back" type="button" hidden>← กลับไปเลือกโพสต์ในโปรไฟล์</button>
+    <div id="profile-controls" class="profile-controls" hidden>
+      <p id="profile-status" role="status" aria-live="polite"></p>
+      <div class="profile-actions">
+        <button id="load-more" disabled type="button">โหลดเพิ่ม</button>
+        <button id="load-all-posts" disabled type="button">อ่านโพสต์ทั้งหมด</button>
+        <button id="stop-profile" disabled type="button" hidden>หยุดอ่าน</button>
+      </div>
+      <p id="profile-error" role="alert"></p>
+    </div>
     <div class="picker-body">
       <section id="media-viewer" class="media-viewer" aria-labelledby="viewer-title" hidden>
         <div class="viewer-heading"><h3 id="viewer-title" tabindex="-1"></h3><button id="close-viewer" class="viewer-back" type="button" disabled>กลับไปดูทั้งหมด</button></div>

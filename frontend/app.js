@@ -3,6 +3,7 @@ const $ = (id) => document.getElementById(id);
 const form = $("link-form"), urlInput = $("url"), inspectButton = $("inspect"), downloadButton = $("download");
 let media = null, inspectedUrl = "", inspection = null, revision = 0, activeJob = null, polling = false, submitting = false;
 const selected = new Map();
+let profileLoading = null, readAllPosts = false, profileReturn = null;
 const numbers = new Intl.NumberFormat("th-TH", { maximumFractionDigits: 0 });
 const picker = $("media-picker");
 let pickerTrigger = null, viewerTrigger = null, viewerRevision = 0;
@@ -21,12 +22,23 @@ function step(index) {
 function busy(button, value) { button.disabled = value; button.setAttribute("aria-busy", String(value)); }
 function selectionState() {
   const count = [...selected.values()].filter(Boolean).length;
-  $("selection-count").textContent = media ? `เลือก ${numbers.format(count)} / ${numbers.format(media.items.length)} รายการ` : "";
+  $("selection-count").textContent = media ? `เลือก ${numbers.format(count)} / ${numbers.format(media.items.length)} ${media.type === "profile" ? "โพสต์" : "รายการ"}` : "";
+  const mediaCount = media?.type === "profile" ? media.items.filter((item) => selected.get(item.id)).reduce((total, item) => total + (item.media_count || 1), 0) : count;
+  if (media?.type === "profile") $("selection-count").textContent += ` · รวม ${numbers.format(mediaCount)} สื่อ`;
+  if (mediaCount > (media?.limits?.max_items || 100)) $("selection-count").textContent += " · เกินขีดจำกัด กรุณาแบ่งเป็นชุด";
   $("picker-count").textContent = $("selection-count").textContent;
   $("select-all").checked = !!media && count === media.items.length;
   $("select-all").indeterminate = !!media && count > 0 && count < media.items.length;
-  downloadButton.disabled = !count || !!activeJob || submitting || !!inspection;
+  downloadButton.disabled = !count || !!activeJob || submitting || !!inspection || !!profileLoading || mediaCount > (media?.limits?.max_items || 100);
   $("open-picker").disabled = !media || !!activeJob || submitting || !!inspection;
+  $("return-profile").hidden = !profileReturn;
+  $("return-profile-picker").hidden = !profileReturn;
+  $("return-profile-picker").disabled = !!activeJob || submitting || !!inspection;
+  $("return-profile").disabled = !!activeJob || submitting || !!inspection;
+  $("load-more").disabled = !!profileLoading || !!activeJob || !media?.next_cursor;
+  $("load-all-posts").disabled = $("load-more").disabled;
+  $("stop-profile").hidden = !profileLoading;
+  $("stop-profile").disabled = !profileLoading;
   document.querySelectorAll(".media-tile").forEach((tile) => tile.classList.toggle("is-selected", !!selected.get(tile.dataset.id)));
 }
 
@@ -75,6 +87,7 @@ $("close-picker").disabled = false; $("close-viewer").disabled = false;
 $("close-picker").addEventListener("click", () => picker.close());
 $("close-viewer").addEventListener("click", () => closeViewer());
 picker.addEventListener("close", () => {
+  readAllPosts = false; profileLoading?.abort();
   closeViewer(false); document.documentElement.classList.remove("picker-open");
   if (pickerTrigger?.isConnected) pickerTrigger.focus();
 });
@@ -111,13 +124,22 @@ async function api(path, options = {}) {
   } finally { clearTimeout(timeout); }
 }
 
-function renderMedia(result) {
+function renderMedia(result, preserve = false) {
+  const previous = preserve ? new Map(selected) : new Map();
   media = result;
   selected.clear();
+  const isProfile = result.type === "profile";
+  $("profile-controls").hidden = !isProfile;
+  if (!preserve) $("profile-error").textContent = "";
+  $("picker-title").textContent = isProfile ? "เลือกโพสต์ที่จะบันทึก" : "เลือกสื่อที่จะบันทึก";
+  $("picker-help").textContent = isProfile ? "กดภาพปกเพื่อดูสื่อในโพสต์ เลือกหลายโพสต์เพื่อรวมเป็น ZIP" : "กดที่รูปเพื่อขยาย หรือกดที่คลิปเพื่อเล่นตัวอย่าง";
+  $("download-note").textContent = isProfile ? "ดาวน์โหลดทุกสื่อในโพสต์ที่เลือกเป็น ZIP · คลิปเลือกคุณภาพไม่เกิน 720p เมื่อมีให้เลือก · ขีดจำกัดนับรวมทุกสื่อ" : "เลือกได้ทั้งวิดีโอและรูปภาพ หลายรายการจะรวมเป็นไฟล์ ZIP";
+  if (isProfile) $("profile-status").textContent = `อ่านแล้ว ${numbers.format(result.items.length)} โพสต์${result.next_cursor ? " · ยังมีโพสต์เพิ่มเติม" : " · อ่านครบตามที่ Instagram ส่งมาแล้ว"}`;
   $("empty-state").hidden = true;
   $("media-content").hidden = false;
   $("media-title").textContent = result.title;
-  const kinds = { video: "วิดีโอ", image: "รูปภาพ", carousel: "โพสต์หลายรายการ" };
+  if (isProfile && !result.items.length) $("profile-status").textContent = "ยังไม่พบโพสต์ อาจไม่มีโพสต์หรือบัญชีที่เชื่อมต่อยังไม่มีสิทธิ์ดู";
+  const kinds = { video: "วิดีโอ", image: "รูปภาพ", carousel: "โพสต์หลายรายการ", profile: "โปรไฟล์ Instagram" };
   const duration = result.duration ? ` · ${numbers.format(Math.floor(result.duration / 60))}:${String(Math.floor(result.duration % 60)).padStart(2, "0")} นาที` : "";
   $("media-meta").textContent = `${kinds[result.type] || "สื่อ"} · ${numbers.format(result.items.length)} รายการ${duration}`;
   const thumbnail = $("thumbnail");
@@ -131,7 +153,7 @@ function renderMedia(result) {
   result.items.forEach((item, index) => {
     const row = document.createElement("article"); row.className = "media-tile"; row.dataset.id = item.id;
     const preview = document.createElement("button"); preview.type = "button"; preview.className = "tile-preview";
-    preview.setAttribute("aria-label", `${item.type === "video" ? "เล่นวิดีโอ" : "ดูรูปภาพ"} ${index + 1}`);
+    preview.setAttribute("aria-label", `${item.type === "post" ? "ดูสื่อในโพสต์" : item.type === "video" ? "เล่นวิดีโอ" : "ดูรูปภาพ"} ${index + 1}`);
     const placeholder = document.createElement("span"); placeholder.className = "tile-placeholder"; placeholder.textContent = "กำลังโหลดตัวอย่าง…";
     const image = document.createElement("img"); image.alt = ""; image.loading = "lazy"; image.decoding = "async";
     image.onload = () => { placeholder.hidden = true; image.classList.add("is-loaded"); };
@@ -140,16 +162,20 @@ function renderMedia(result) {
     else placeholder.textContent = "ไม่มีรูปตัวอย่าง";
     preview.append(placeholder, image);
     if (item.type === "video") { const play = document.createElement("span"); play.className = "tile-play"; play.textContent = "▶"; play.setAttribute("aria-hidden", "true"); preview.append(play); }
-    preview.addEventListener("click", () => openViewer(item, index, preview));
+    preview.addEventListener("click", () => item.type === "post" ? openProfilePost(item, preview) : openViewer(item, index, preview));
     row.append(preview);
     const label = document.createElement("label");
     label.className = "tile-selection";
     const checkbox = document.createElement("input");
-    checkbox.type = "checkbox"; checkbox.checked = true; checkbox.dataset.item = item.id;
-    selected.set(item.id, true);
+    checkbox.type = "checkbox"; checkbox.checked = previous.has(item.id) ? previous.get(item.id) : true; checkbox.dataset.item = item.id;
+    selected.set(item.id, checkbox.checked);
     checkbox.addEventListener("change", () => { selected.set(item.id, checkbox.checked); selectionState(); });
-    label.append(checkbox, document.createTextNode(`${item.type === "video" ? "วิดีโอ" : "รูปภาพ"} ${index + 1}`));
+    label.append(checkbox, document.createTextNode(`${item.type === "post" ? "โพสต์" : item.type === "video" ? "วิดีโอ" : "รูปภาพ"} ${index + 1}`));
     row.append(label);
+    if (item.type === "post") {
+      const caption = document.createElement("p"); caption.className = "post-caption"; caption.textContent = item.title; row.append(caption);
+      const detail = document.createElement("p"); detail.className = "post-detail"; detail.textContent = `${numbers.format(item.media_count)} สื่อ${item.has_video ? " · มีวิดีโอ" : " · รูปภาพ"}`; row.append(detail);
+    }
     if (item.type === "video") {
       const qualityLabel = document.createElement("label"); qualityLabel.className = "quality-control";
       const select = document.createElement("select"); select.dataset.quality = item.id;
@@ -176,9 +202,72 @@ $("select-all").addEventListener("change", (event) => {
   document.querySelectorAll("[data-item]").forEach((node) => { node.checked = event.target.checked; });
   selectionState();
 });
+async function loadProfilePages(all = false) {
+  if (media?.type !== "profile" || profileLoading || activeJob || !media.next_cursor) return;
+  const current = revision, profileUrl = inspectedUrl;
+  const controller = new AbortController(); profileLoading = controller; readAllPosts = all;
+  const cursors = new Set();
+  $("profile-error").textContent = "";
+  selectionState();
+  try {
+    do {
+      const cursor = media.next_cursor;
+      if (!cursor || cursors.has(cursor)) throw new Error("Instagram ส่งหน้าซ้ำ กรุณาลองใหม่ภายหลัง");
+      cursors.add(cursor);
+      if (cursors.size > 100) throw new Error("อ่านครบขีดจำกัด 100 หน้าแล้ว กรุณาเลือกดาวน์โหลดเป็นชุด");
+      $("profile-status").textContent = `กำลังอ่านโพสต์เพิ่ม… อ่านแล้ว ${numbers.format(media.items.length)} โพสต์`;
+      const page = await api("/info", { method: "POST", body: JSON.stringify({ url: profileUrl, cursor }), signal: controller.signal });
+      if (revision !== current || controller.signal.aborted) return;
+      const merged = new Map(media.items.map((item) => [item.id, item]));
+      page.items.forEach((item) => merged.set(item.id, item));
+      if (merged.size > 1000) throw new Error("อ่านครบขีดจำกัด 1,000 โพสต์แล้ว กรุณาเลือกดาวน์โหลดเป็นชุด");
+      renderMedia({ ...media, items: [...merged.values()], next_cursor: page.next_cursor }, true);
+    } while (readAllPosts && media.next_cursor);
+  } catch (issue) {
+    if (revision === current && !controller.signal.aborted) { $("profile-error").textContent = issue.message; $("profile-status").textContent = `เก็บไว้ ${numbers.format(media.items.length)} โพสต์ · อ่านต่อไม่สำเร็จ`; }
+  } finally {
+    if (profileLoading === controller) {
+      profileLoading = null; readAllPosts = false;
+      if (controller.signal.aborted && media?.type === "profile") $("profile-status").textContent = `หยุดอ่านแล้ว · เก็บไว้ ${numbers.format(media.items.length)} โพสต์`;
+      selectionState();
+    }
+  }
+}
+$("load-more").addEventListener("click", () => loadProfilePages(false));
+$("load-all-posts").addEventListener("click", () => loadProfilePages(true));
+$("stop-profile").addEventListener("click", () => { readAllPosts = false; profileLoading?.abort(); });
+async function openProfilePost(item, trigger) {
+  if (inspection || activeJob || submitting || profileLoading) return;
+  const snapshot = { media, selected: new Map(selected), url: inspectedUrl, id: item.id };
+  const current = revision, controller = new AbortController(); inspection = controller;
+  error(); trigger.setAttribute("aria-busy", "true"); selectionState();
+  try {
+    const result = await api("/info", { method: "POST", body: JSON.stringify({ url: item.url }), signal: controller.signal });
+    if (revision !== current) return;
+    closeViewer(false); profileReturn = snapshot; inspectedUrl = result.url || item.url;
+    renderMedia(result); $("return-profile-picker").hidden = false;
+    $("picker-title").setAttribute("tabindex", "-1"); $("picker-title").focus();
+  } catch (issue) {
+    if (revision === current) $("profile-error").textContent = issue.message;
+  } finally {
+    if (inspection === controller) { inspection = null; selectionState(); }
+    trigger.removeAttribute("aria-busy");
+  }
+}
+function returnToProfile() {
+  if (!profileReturn || inspection || activeJob || submitting) return;
+  const snapshot = profileReturn; profileReturn = null; closeViewer(false);
+  selected.clear(); snapshot.selected.forEach((value, key) => selected.set(key, value));
+  inspectedUrl = snapshot.url; renderMedia(snapshot.media, true);
+  $("return-profile-picker").hidden = true;
+  [...document.querySelectorAll(".media-tile")].find((tile) => tile.dataset.id === snapshot.id)?.querySelector("button")?.focus();
+}
+$("return-profile").addEventListener("click", returnToProfile);
+$("return-profile-picker").addEventListener("click", returnToProfile);
 urlInput.addEventListener("input", () => {
   if (picker.open) picker.close();
   revision++;
+  readAllPosts = false; profileLoading?.abort(); profileLoading = null; profileReturn = null;
   inspection?.abort(); inspection = null;
   media = null; inspectedUrl = ""; selected.clear();
   $("media-content").hidden = true; $("empty-state").hidden = false;
@@ -196,6 +285,7 @@ form.addEventListener("submit", async (event) => {
     if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
   } catch { error("กรุณาวางลิงก์ http หรือ https ที่ถูกต้อง", true); return; }
   const current = ++revision;
+  profileReturn = null; readAllPosts = false; profileLoading?.abort(); profileLoading = null;
   inspection = new AbortController();
   error(); busy(inspectButton, true);
   selectionState();
@@ -213,7 +303,7 @@ form.addEventListener("submit", async (event) => {
     $("media-content").hidden = true; $("empty-state").hidden = false;
     error(issue.message, true);
     $("empty-title").textContent = "ยังตรวจสอบลิงก์นี้ไม่ได้";
-    $("empty-detail").textContent = "ตรวจสอบว่าเป็นโพสต์สาธารณะ แล้วกดตรวจสอบอีกครั้ง";
+    $("empty-detail").textContent = "ตรวจสอบลิงก์และสิทธิ์ของบัญชีที่ล็อกอิน แล้วกดตรวจสอบอีกครั้ง";
   } finally {
     if (revision === current) {
       inspection = null; busy(inspectButton, false);
@@ -273,13 +363,14 @@ async function pollJob() {
 }
 $("retry-status").addEventListener("click", () => { error(); pollJob(); });
 downloadButton.addEventListener("click", async () => {
-  if (!media || activeJob || submitting) return;
+  if (!media || activeJob || submitting || profileLoading) return;
   const selections = media.items.filter((item) => selected.get(item.id)).map((item) => {
     const value = { id: item.id };
     if (item.type === "video") value.quality = [...document.querySelectorAll("[data-quality]")].find((node) => node.dataset.quality === item.id).value;
     return value;
   });
   if (!selections.length) { error("กรุณาเลือกอย่างน้อยหนึ่งรายการ"); return; }
+  if (selections.length > (media.limits?.max_items || 100)) { error("เลือกเกินจำนวนที่กำหนด กรุณาแบ่งดาวน์โหลดเป็นชุด"); return; }
   submitting = true; error(); busy(downloadButton, true); lockSelections(true);
   $("file-link").hidden = true; $("retry-status").hidden = true;
   $("job-status").textContent = "กำลังสร้างงาน…"; $("progress").removeAttribute("value");
