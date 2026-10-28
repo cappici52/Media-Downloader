@@ -135,16 +135,73 @@ def ydl_options(*, use_cookies=True):
     return options
 
 
+def twitter_public_scope(result):
+    """Preserve explicit X visibility evidence without treating missing fields as public."""
+    if result.get("__typename") != "Tweet":
+        return None
+    legacy = result.get("legacy") or {}
+    user = ((result.get("core") or {}).get("user_results") or {}).get("result") or {}
+    protected = (user.get("privacy") or {}).get(
+        "protected", (user.get("legacy") or {}).get("protected")
+    )
+    if protected is True:
+        return "private"
+    if protected is not False:
+        return None
+    for source in (result, legacy):
+        for key, value in source.items():
+            if value and any(
+                marker in key.lower()
+                for marker in (
+                    "exclusive",
+                    "subscription",
+                    "subscriber",
+                    "super_followers",
+                    "trusted_friends",
+                    "limited_action",
+                    "community",
+                )
+            ):
+                return None
+    for child in (result.get("quoted_status_result"), legacy.get("retweeted_status_result")):
+        if child:
+            scope = twitter_public_scope(child.get("result") or {})
+            if scope != "public":
+                return scope
+    return "public"
+
+
 def make_ydl(options=None):
     from yt_dlp import YoutubeDL
     from yt_dlp.networking._urllib import UrllibRH
+    from yt_dlp.extractor.twitter import TwitterIE
+
+    class ScopedTwitterIE(TwitterIE):
+        @classmethod
+        def ie_key(cls):
+            return "Twitter"
+
+        def _graphql_to_legacy(self, data, twid):
+            self._media_scope = twitter_public_scope(
+                (data.get("tweetResult") or {}).get("result") or {}
+            )
+            return super()._graphql_to_legacy(data, twid)
+
+        def _real_extract(self, url):
+            result = super()._real_extract(url)
+            scope = getattr(self, "_media_scope", None)
+            if scope and not result.get("availability"):
+                result["availability"] = scope
+            return result
 
     class GuardedYoutubeDL(YoutubeDL):
         def build_request_director(self, handlers, preferences=None):
             # Native curl/impersonation transports bypass Python's socket guard.
             return super().build_request_director([UrllibRH], preferences=[])
 
-    return GuardedYoutubeDL(options or ydl_options())
+    ydl = GuardedYoutubeDL(options or ydl_options())
+    ydl.add_info_extractor(ScopedTwitterIE(ydl))
+    return ydl
 
 
 def disable_external_downloaders():
@@ -219,6 +276,8 @@ def video_info(url, *, use_cookies=True, instagram_product=None):
         for entry in entries:
             if not entry:
                 continue
+            if not entry.get("availability") and raw.get("availability"):
+                entry = dict(entry, availability=raw["availability"])
             if entry.get("is_live") or entry.get("live_status") in ("is_live", "is_upcoming"):
                 raise MediaError("live_not_supported", "ยังไม่รองรับวิดีโอถ่ายทอดสด กรุณาใช้วิดีโอที่จบแล้ว")
             assert_public(entry, use_cookies=use_cookies)
