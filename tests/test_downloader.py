@@ -53,7 +53,7 @@ class DownloaderTests(unittest.TestCase):
         self.assertIsNone(downloader.twitter_public_scope(result))
         result["core"]["user_results"]["result"]["privacy"]["protected"] = False
         result["exclusive_tweet_info"] = {"is_exclusive": True}
-        self.assertIsNone(downloader.twitter_public_scope(result))
+        self.assertEqual(downloader.twitter_public_scope(result), "subscriber_only")
         self.assertIsNone(downloader.twitter_public_scope({"__typename": "TweetTombstone"}))
 
     def test_x_quoted_private_media_is_not_marked_public(self):
@@ -124,7 +124,7 @@ class DownloaderTests(unittest.TestCase):
             self.assertRaises(MediaError),
         ):
             downloader.extract_public_first(adapter, "url")
-        self.assertEqual(adapter.call_count, 1)
+        self.assertEqual(adapter.call_count, 2)
 
     def test_x_missing_media_retries_configured_browser_session(self):
         adapter = Mock(side_effect=[MediaError("no_media", "No video could be found"), ["video"]])
@@ -181,7 +181,7 @@ class DownloaderTests(unittest.TestCase):
             self.assertEqual(result["code"], code)
             self.assertNotIn(message, result["message"])
 
-    def test_private_content_is_rejected_even_with_browser_cookies(self):
+    def test_anonymous_public_helper_remains_strict(self):
         with patch.object(downloader, "settings", replace(downloader.settings, browser="firefox")):
             for metadata in ({"availability": "private"}, {"owner": {"is_private": True}}, {}):
                 with self.subTest(metadata=metadata), self.assertRaises(MediaError):

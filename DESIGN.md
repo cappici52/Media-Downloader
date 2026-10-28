@@ -102,4 +102,4 @@ standard formats and product name.
 - Do use textContent for extractor-provided titles and backend-proxied thumbnails.
 - Do show unknown progress as indeterminate, and provide a file link after completion.
 - Don't put source URLs or browser cookies in browser storage; only a job ID is persisted in sessionStorage.
-- Don't imply that a private, DRM or paywalled post is supported.
+- Private posts require the user's own authenticated browser session with access granted by the provider. Never imply DRM or paywall bypass is supported.

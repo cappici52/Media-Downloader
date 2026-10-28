@@ -40,10 +40,14 @@ def friendly_error(error):
             "code": "cookies_decryption",
             "message": "ถอดรหัส cookies ของ Chrome ไม่ได้ แม้ล็อกอินแล้ว อาจต้องใช้ Firefox ในเครื่องแทน",
         }
+    if any(word in text for word in ("paywall", "premium_only", "subscriber_only")):
+        return {"code": "paywall", "message": "ยังไม่รองรับเนื้อหาหลัง paywall หรือสมาชิกแบบเสียเงิน"}
+    if "drm" in text:
+        return {"code": "drm", "message": "ไม่รองรับสื่อที่มี DRM"}
     if any(
         word in text for word in ("private", "protected", "not available to you", "followers only")
     ):
-        return {"code": "private", "message": "โพสต์เป็นส่วนตัวหรือคุณไม่มีสิทธิ์เข้าถึง"}
+        return {"code": "private", "message": "บัญชีที่ล็อกอินยังไม่มีสิทธิ์เข้าถึงโพสต์นี้ หรือ session หมดอายุ"}
     if any(
         word in text
         for word in (
@@ -144,14 +148,13 @@ def twitter_public_scope(result):
     if result.get("__typename") != "Tweet":
         return None
     legacy = result.get("legacy") or {}
+    if paid_media(result) or paid_media(legacy):
+        return "subscriber_only"
     user = ((result.get("core") or {}).get("user_results") or {}).get("result") or {}
     protected = (user.get("privacy") or {}).get(
         "protected", (user.get("legacy") or {}).get("protected")
     )
-    if protected is True:
-        return "private"
-    if protected is not False:
-        return None
+    scope = "private" if protected is True else "public" if protected is False else None
     for source in (result, legacy):
         for key, value in source.items():
             if value and any(
@@ -166,13 +169,15 @@ def twitter_public_scope(result):
                     "community",
                 )
             ):
-                return None
+                scope = None
     for child in (result.get("quoted_status_result"), legacy.get("retweeted_status_result")):
         if child:
-            scope = twitter_public_scope(child.get("result") or {})
-            if scope != "public":
-                return scope
-    return "public"
+            child_scope = twitter_public_scope(child.get("result") or {})
+            if child_scope == "subscriber_only":
+                return child_scope
+            if child_scope != "public":
+                scope = child_scope if child_scope == "private" else None
+    return scope
 
 
 def make_ydl(options=None):
@@ -231,7 +236,75 @@ def allowed_format(fmt):
     )
 
 
+def paid_media(metadata):
+    if metadata.get("availability") in ("premium_only", "subscriber_only"):
+        return True
+    if any(
+        metadata.get(key)
+        for key in (
+            "is_paid_content",
+            "is_subscription_only",
+            "super_followers_only",
+            "exclusive_tweet_info",
+        )
+    ):
+        return True
+    for key in ("subscription", "subscription_media_visibility"):
+        value = metadata.get(key)
+        if value and str(value).lower() not in ("public", "all", "everyone"):
+            return True
+    return False
+
+
+def reject_unsupported_media(metadata):
+    if metadata.get("has_drm") or metadata.get("is_drm_protected"):
+        raise MediaError("drm", "ไม่รองรับสื่อที่มี DRM")
+    if paid_media(metadata):
+        raise MediaError("paywall", "ยังไม่รองรับเนื้อหาหลัง paywall หรือสมาชิกแบบเสียเงิน")
+
+
+def has_login_session(jar, url):
+    host = (urlsplit(url).hostname or "").lower()
+    for domains, credentials in (
+        (("x.com", "twitter.com"), ({"auth_token"},)),
+        (("instagram.com",), ({"sessionid"},)),
+        (("facebook.com", "fb.watch"), ({"c_user", "xs"},)),
+        (("youtube.com", "youtu.be"), ({"SAPISID"}, {"__Secure-3PAPISID"}, {"SID"})),
+    ):
+        if any(host == domain or host.endswith("." + domain) for domain in domains):
+            names = {
+                cookie.name
+                for cookie in jar
+                if cookie.value
+                and not cookie.is_expired()
+                and any(
+                    cookie.domain.lstrip(".").lower() == domain
+                    or cookie.domain.lstrip(".").lower().endswith("." + domain)
+                    for domain in domains
+                )
+            }
+            return any(required <= names for required in credentials)
+    return False
+
+
+def assert_media_access(metadata, *, use_cookies, authenticated):
+    reject_unsupported_media(metadata)
+    # Successful extractor metadata is still required: provider access denials are
+    # never caught or overridden here. A configured browser alone is not a login.
+    if use_cookies and authenticated:
+        return
+    try:
+        assert_public(metadata, use_cookies=False)
+    except MediaError as error:
+        if error.code == "private":
+            raise MediaError(
+                "login_required", "โพสต์ส่วนตัวต้องใช้ session ของบัญชีที่มีสิทธิ์ดู กรุณาเชื่อมต่อเบราว์เซอร์ที่ล็อกอินไว้"
+            ) from None
+        raise
+
+
 def assert_public(metadata, *, use_cookies=True):
+    reject_unsupported_media(metadata)
     visibility = metadata.get("availability") or metadata.get("visibility")
     if visibility in ("private", "premium_only", "subscriber_only", "needs_auth", "followers"):
         raise MediaError("private", "รองรับเฉพาะเนื้อหาสาธารณะเท่านั้น")
@@ -280,6 +353,7 @@ def video_info(url, *, use_cookies=True, instagram_product=None):
                     fmt["acodec"] = fmt.get("acodec") or "unknown"
                 if entry.get("thumbnails"):
                     entry["thumbnail"] = entry["thumbnails"][-1]["url"]
+        reject_unsupported_media(raw)
         entries = list(raw.get("entries") or [raw])
         videos = []
         for entry in entries:
@@ -289,7 +363,9 @@ def video_info(url, *, use_cookies=True, instagram_product=None):
                 entry = dict(entry, availability=raw["availability"])
             if entry.get("is_live") or entry.get("live_status") in ("is_live", "is_upcoming"):
                 raise MediaError("live_not_supported", "ยังไม่รองรับวิดีโอถ่ายทอดสด กรุณาใช้วิดีโอที่จบแล้ว")
-            assert_public(entry, use_cookies=use_cookies)
+            assert_media_access(
+                entry, use_cookies=use_cookies, authenticated=has_login_session(ydl.cookiejar, url)
+            )
             if len(videos) >= settings.max_items:
                 raise MediaError("item_limit", "โพสต์มีสื่อเกินจำนวนที่กำหนด")
             if (entry.get("duration") or 0) > settings.max_duration:
@@ -339,7 +415,11 @@ def image_info(url, *, use_cookies=True, instagram_product=None):
         if message[0] != Message.Url:
             continue  # Never recurse profile queues or delegate to another downloader.
         media_url, metadata = message[1:3]
-        assert_public(metadata, use_cookies=use_cookies)
+        assert_media_access(
+            metadata,
+            use_cookies=use_cookies,
+            authenticated=has_login_session(ext.session.cookies, url),
+        )
         suffix = str(metadata.get("extension", "")).lower()
         if suffix not in ("jpg", "jpeg", "png", "webp", "gif", "avif"):
             continue
@@ -456,7 +536,7 @@ def extract_public_first(adapter, url):
         is_x = any(
             host == domain or host.endswith("." + domain) for domain in ("x.com", "twitter.com")
         )
-        retry_codes = ("login_required", "platform_blocked", "extract_failed")
+        retry_codes = ("login_required", "private", "platform_blocked", "extract_failed")
         if shortcode or is_x:
             retry_codes += ("no_media",)
         if shortcode and code in retry_codes:
@@ -501,10 +581,14 @@ def inspect_media(url):
         try:
             images = extract_public_first(image_info, url)
         except Exception as error:
+            if friendly_error(error)["code"] in ("paywall", "drm"):
+                raise
             failures.append(error)
     try:
         raw, videos = extract_public_first(video_info, url)
     except Exception as error:
+        if friendly_error(error)["code"] in ("paywall", "drm"):
+            raise
         failures.append(error)
     if not videos and not images:
         priority = (
