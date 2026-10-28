@@ -52,7 +52,7 @@ async def run_worker(request, *, timeout, progress=None, limits=settings):
         sys.executable, "-m", "backend.worker",
         cwd=str(Path(__file__).resolve().parent.parent),
         stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL, limit=2 * 1024 * 1024, **kwargs,
+        stderr=asyncio.subprocess.DEVNULL, limit=8 * 1024 * 1024, **kwargs,
     )
     async def communicate():
         process.stdin.write((json.dumps(request) + "\n").encode())

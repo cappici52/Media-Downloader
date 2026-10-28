@@ -17,14 +17,14 @@ class MediaError(Exception):
 def friendly_error(error):
     if isinstance(error, (MediaError, URLValidationError)):
         return {"code": error.code, "message": str(error)}
-    text = str(error).lower()
-    if any(word in text for word in ("private", "not available to you", "followers only")):
+    text = (type(error).__name__ + " " + str(error)).lower()
+    if any(word in text for word in ("private", "authorization", "not available to you", "followers only")):
         return {"code": "private", "message": "โพสต์เป็นส่วนตัวหรือคุณไม่มีสิทธิ์เข้าถึง"}
     if any(word in text for word in ("login", "log in", "sign in", "cookies", "authentication", "age-restricted")):
         return {"code": "login_required", "message": "ต้องล็อกอิน เว็บไซต์อาจไม่อนุญาตให้ดึงโพสต์นี้"}
     if any(word in text for word in ("403", "429", "blocked", "captcha", "bot", "challenge")):
         return {"code": "platform_blocked", "message": "แพลตฟอร์มบล็อกการดึงข้อมูล กรุณาลองใหม่ภายหลัง"}
-    if any(word in text for word in ("unsupported", "not found", "404", "no video", "unavailable", "no suitable")):
+    if any(word in text for word in ("unsupported", "not found", "notfound", "404", "no video", "unavailable", "no suitable")):
         return {"code": "no_media", "message": "ไม่พบวิดีโอหรือรูปในลิงก์นี้ หรือเนื้อหาถูกลบแล้ว"}
     if any(word in text for word in ("timeout", "timed out", "network", "connection", "resolve")):
         return {"code": "network", "message": "เชื่อมต่อเว็บไซต์ไม่ได้ กรุณาลองใหม่อีกครั้ง"}
@@ -136,7 +136,7 @@ def image_info(url):
         validate_network_url(media_url)
         if len(images) >= settings.max_items:
             raise MediaError("item_limit", "โพสต์มีรูปเกินจำนวนที่กำหนด")
-        images.append({"url": media_url, "extension": suffix, "title": str(metadata.get("description") or metadata.get("title") or "รูปภาพ")[:300], "headers": dict(ext.session.headers), "cookies": ext.session.cookies.get_dict()})
+        images.append({"url": media_url, "extension": suffix, "title": str(metadata.get("description") or metadata.get("title") or "รูปภาพ")[:300], "headers": {key: value for key, value in ext.session.headers.items() if key.lower() not in ("cookie", "host")}, "cookies": ext.session.cookies.copy()})
     return images
 
 
