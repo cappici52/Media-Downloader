@@ -424,7 +424,8 @@ def instagram_story(url):
     host = parts.hostname or ""
     return (host == "instagram.com" or host.endswith(".instagram.com")) and bool(
         re.fullmatch(
-            r"/stories/(?!(?:highlights|me)(?:/|$))[A-Za-z0-9._]+(?:/[0-9]+)?/?", parts.path
+            r"/stories/(?:highlights/[0-9]+|(?!(?:highlights|me)(?:/|$))[A-Za-z0-9._]+(?:/[0-9]+)?)/?",
+            parts.path,
         )
     )
 
@@ -437,12 +438,14 @@ def instagram_story_product(url):
             raise MediaError("login_required", "Story ต้องใช้ session Instagram ของบัญชีที่มีสิทธิ์ดู")
         ext.login()
         parts = urlsplit(url).path.strip("/").split("/")
-        if len(parts) == 3:
+        highlight = parts[1] == "highlights"
+        single = len(parts) == 3 and not highlight
+        if single:
             data = ext.api._call(f"/v1/media/{parts[2]}/info/")
         else:
             from gallery_dl.extractor.instagram import InstagramAPI
 
-            story_path = f"/stories/{parts[1]}"
+            story_path = "/" + "/".join(parts)
 
             class StoryAPI(InstagramAPI):
                 # Read Story query IDs and tokens from the Story page itself;
@@ -454,14 +457,18 @@ def instagram_story_product(url):
                     return super()._extract_opname_info(opname, story_path)
 
             ext.api = StoryAPI(ext)
-            user = ext.api.user_by_web(parts[1])
-            ext._assign_user(user)
-            user_id = user["id"]
-            data = next(iter(ext.api.reels_media((user_id,))), {})
+            if highlight:
+                user_id = parts[2]
+                reel_id = f"highlight:{user_id}"
+            else:
+                user = ext.api.user_by_web(parts[1])
+                ext._assign_user(user)
+                user_id = reel_id = user["id"]
+            data = next(iter(ext.api.reels_media((reel_id,))), {})
         items = data.get("items") or []
         if not items:
             raise MediaError("story_unavailable", "ไม่พบ Story นี้ อาจหมดอายุ ถูกลบ หรือบัญชีไม่มีสิทธิ์ดู")
-        if len(parts) == 3:
+        if single:
             product = items[0]
         else:
             reject_unsupported_media(data)
@@ -473,6 +480,7 @@ def instagram_story_product(url):
                 "pk": str(user_id),
                 "code": "Story",
                 "caption": None,
+                "title": data.get("title") if highlight else None,
                 "user": data.get("user") or items[0].get("user") or {},
                 "taken_at": items[0].get("taken_at"),
                 "carousel_media": items,

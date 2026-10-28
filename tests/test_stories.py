@@ -51,8 +51,10 @@ class StoryTests(unittest.TestCase):
         self.assertFalse(
             downloader.instagram_story("https://instagram.com.evil.test/stories/f/123/")
         )
+        self.assertTrue(downloader.instagram_story("https://instagram.com/stories/highlights/123/"))
+        self.assertFalse(downloader.instagram_story("https://instagram.com/stories/highlights/"))
         self.assertFalse(
-            downloader.instagram_story("https://instagram.com/stories/highlights/123/")
+            downloader.instagram_story("https://instagram.com/stories/highlights/abc/")
         )
         self.assertEqual(downloader.normalize_post_url(URL), URL)
         self.assertIsNone(downloader.instagram_shortcode(URL))
@@ -125,6 +127,57 @@ class StoryTests(unittest.TestCase):
             downloader.instagram_story_product("https://instagram.com/stories/fixture/")
         tokens.assert_called_once_with("/stories/fixture")
         query.assert_called_once_with("StoryQuery", "/stories/fixture")
+
+    def test_highlights_use_highlight_reel_id_and_highlight_page_queries(self):
+        from gallery_dl.extractor.instagram import InstagramAPI
+
+        ext = self.extractor()
+        original_api = ext.api
+        requested_ids = []
+
+        def read_reels(api, reel_ids):
+            requested_ids.extend(reel_ids)
+            api._extract_fb_tokens("/")
+            api._extract_opname_info("StoryQuery", "/")
+            return iter(
+                [
+                    {
+                        "title": "Fixture Highlight",
+                        "items": [product_fixture(), product_fixture(True)],
+                    }
+                ]
+            )
+
+        with (
+            patch.object(downloader, "gallery_extractor", return_value=ext),
+            patch.object(InstagramAPI, "user_by_web") as profile,
+            patch.object(InstagramAPI, "reels_media", read_reels),
+            patch.object(
+                InstagramAPI, "_extract_fb_tokens", return_value=("fixture", "fixture")
+            ) as tokens,
+            patch.object(InstagramAPI, "_extract_opname_info", return_value=("123", [])) as query,
+        ):
+            product = downloader.instagram_story_product(
+                "https://instagram.com/stories/highlights/123/"
+            )
+        self.assertEqual(requested_ids, ["highlight:123"])
+        self.assertEqual(product["pk"], "123")
+        self.assertEqual(product["title"], "Fixture Highlight")
+        self.assertEqual(len(product["carousel_media"]), 2)
+        profile.assert_not_called()
+        original_api._call.assert_not_called()
+        tokens.assert_called_once_with("/stories/highlights/123")
+        query.assert_called_once_with("StoryQuery", "/stories/highlights/123")
+
+    def test_highlight_without_login_does_not_request_media(self):
+        ext = self.extractor(authenticated=False)
+        with (
+            patch.object(downloader, "gallery_extractor", return_value=ext),
+            self.assertRaises(MediaError) as error,
+        ):
+            downloader.instagram_story_product("https://instagram.com/stories/highlights/123/")
+        self.assertEqual(error.exception.code, "login_required")
+        ext.api._call.assert_not_called()
 
     def test_collection_without_login_does_not_request_user_or_media(self):
         ext = self.extractor(authenticated=False)
