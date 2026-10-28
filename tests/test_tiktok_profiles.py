@@ -165,6 +165,29 @@ class TikTokProfileTests(unittest.TestCase):
         ):
             self.assertEqual(len(tp.profile_page(URL, use_cookies=True)["items"]), 2)
 
+    def test_private_zero_count_still_requests_posts_with_authorized_session(self):
+        ext = self.extractor(private=True, status=10222, count=0, login=True)
+        with (
+            patch.object(downloader, "gallery_extractor", return_value=ext),
+            patch.object(
+                TiktokPaginationRequest, "_request_data", return_value=self.page()
+            ) as request,
+        ):
+            result = tp.profile_page(URL, use_cookies=True)
+        self.assertEqual(len(result["items"]), 2)
+        self.assertEqual(request.call_count, 1)
+
+    def test_private_empty_or_blocked_list_is_an_access_error_not_empty_success(self):
+        for data in ({"itemList": [], "hasMore": False}, {}):
+            ext = self.extractor(private=True, status=10222, count=0, login=True)
+            with (
+                patch.object(downloader, "gallery_extractor", return_value=ext),
+                patch.object(TiktokPaginationRequest, "_request_data", return_value=(data, {})),
+                self.assertRaises(MediaError) as error,
+            ):
+                tp.profile_page(URL, use_cookies=True)
+            self.assertEqual(error.exception.code, "private")
+
     def test_other_author_or_bad_ids_are_never_exposed_and_paid_posts_are_skipped(self):
         for item in (dict(post(), author={"uniqueId": "other"}), dict(post(), id="../bad")):
             with (

@@ -74,7 +74,8 @@ def profile_page(url, cursor=None, *, use_cookies=False):
         if status in (10204, 10221):
             raise MediaError("no_media", "ไม่พบโปรไฟล์ TikTok นี้")
         authenticated = use_cookies and has_login_session(ext.session.cookies, url)
-        if user.get("privateAccount") or status == 10222:
+        private = bool(user.get("privateAccount") or status == 10222)
+        if private:
             assert_media_access(
                 {"availability": "private"}, use_cookies=use_cookies, authenticated=authenticated
             )
@@ -86,7 +87,7 @@ def profile_page(url, cursor=None, *, use_cookies=False):
         if not isinstance(sec_uid, str) or not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", sec_uid):
             raise MediaError("platform_blocked", "TikTok ไม่ส่งรหัสโปรไฟล์ กรุณาลองใหม่ภายหลัง")
         count = (user_info.get("stats") or user_info.get("statsV2") or {}).get("videoCount")
-        if not cursor and count is not None and str(count) == "0":
+        if not private and not cursor and count is not None and str(count) == "0":
             return page_result(canonical, username, [], None)
         # Only the first page may change endpoint. Later cursors keep their original semantics.
         modes = [mode, "creator"] if not cursor and mode == "posts" else [mode]
@@ -121,6 +122,11 @@ def profile_page(url, cursor=None, *, use_cookies=False):
             except (ValueError, KeyError, TypeError):
                 data = None
         if data is None:
+            if private:
+                raise MediaError(
+                    "private",
+                    "TikTok ไม่ส่งรายการของบัญชีส่วนตัวนี้ กรุณาตรวจสอบว่า session ตรงกับบัญชี Chrome ที่ดูโพสต์ได้",
+                )
             raise MediaError("platform_blocked", "TikTok ไม่ส่งรายการโพสต์ กรุณาลองใหม่ภายหลัง")
         rows = data["itemList"]
         if len(rows) > 50:
@@ -167,6 +173,11 @@ def profile_page(url, cursor=None, *, use_cookies=False):
         if rows and fingerprint == previous:
             raise MediaError("cursor", "TikTok ส่งหน้าซ้ำ กรุณาลองใหม่ภายหลัง")
         more = data["hasMore" if mode == "posts" else "hasMorePrevious"]
+        if not rows and not more and private:
+            raise MediaError(
+                "private",
+                "TikTok ไม่ส่งโพสต์ของบัญชีส่วนตัวนี้ กรุณาตรวจสอบ session และสิทธิ์ใน Chrome หรือใช้ลิงก์โพสต์แต่ละอัน",
+            )
         if not rows and not more and not cursor and str(count) != "0":
             raise MediaError(
                 "platform_blocked", "TikTok ไม่ส่งโพสต์ แม้โปรไฟล์อาจยังมีโพสต์ กรุณาลองใหม่ภายหลัง"
