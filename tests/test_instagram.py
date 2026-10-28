@@ -33,6 +33,20 @@ def product_fixture(count=16):
 
 
 class InstagramTests(unittest.TestCase):
+    def test_private_public_fallback_retries_authorized_browser_session(self):
+        adapter = Mock(side_effect=[MediaError("login_required", "login"), ["fixture"]])
+        with (
+            patch.object(downloader, "settings", replace(downloader.settings, browser="chrome")),
+            patch.object(
+                downloader, "instagram_public_product", side_effect=MediaError("private", "private")
+            ),
+        ):
+            result = downloader.extract_public_first(adapter, "https://instagram.com/p/Fixture123/")
+        self.assertEqual(result, ["fixture"])
+        self.assertEqual(
+            [call.kwargs["use_cookies"] for call in adapter.call_args_list], [False, True]
+        )
+
     def setUp(self):
         downloader.instagram_public_product.cache_clear()
         self.addCleanup(downloader.instagram_public_product.cache_clear)

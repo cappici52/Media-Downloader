@@ -119,9 +119,13 @@ class InfoRequest(BaseModel):
     url: str = Field(min_length=1, max_length=8192)
 
 
+class InfoQuery(InfoRequest):
+    cursor: str | None = Field(default=None, min_length=1, max_length=4096)
+
+
 class Selection(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    id: str = Field(pattern=r"^(video|image)-[0-9]{1,3}$")
+    id: str = Field(pattern=r"^(?:(video|image)-[0-9]{1,3}|post-[A-Za-z0-9_-]{1,28})$")
     quality: str | None = Field(default=None, pattern=r"^(mp3|[0-9]{2,5}p)$")
 
 
@@ -154,9 +158,13 @@ async def refresh_session(request: Request):
 
 
 @app.post("/info")
-async def info(payload: InfoRequest):
+async def info(payload: InfoQuery):
     url = (await asyncio.to_thread(validate_url, payload.url)).url
-    result = copy.deepcopy(await manager.inspect(url))
+    result = copy.deepcopy(
+        await manager.inspect(url, payload.cursor)
+        if payload.cursor is not None
+        else await manager.inspect(url)
+    )
     prune_previews()
     # Bound cached preview tickets; raw URLs never appear in the browser DOM.
     while len(previews) >= 20:

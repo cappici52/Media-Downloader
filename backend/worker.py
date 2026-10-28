@@ -27,7 +27,7 @@ def main():
     disable_external_downloaders()
     try:
         if request["action"] == "info":
-            result = inspect_media(request["url"])[0]
+            result = inspect_media(request["url"], request.get("cursor"))[0]
         elif request["action"] == "download":
             result = {
                 "filename": download_media(

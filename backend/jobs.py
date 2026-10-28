@@ -210,13 +210,14 @@ class JobManager:
             raise MediaError("queue_full", "คิวงานเต็ม กรุณารอสักครู่แล้วลองใหม่") from None
         return job
 
-    async def inspect(self, url):
+    async def inspect(self, url, cursor=None):
         if self.slots.locked():
             raise MediaError("busy", "ระบบกำลังทำงานเต็มจำนวน กรุณารอสักครู่")
         async with self.slots:
-            return await self.worker(
-                {"action": "info", "url": url}, timeout=self.limits.info_timeout, limits=self.limits
-            )
+            request = {"action": "info", "url": url}
+            if cursor is not None:
+                request["cursor"] = cursor
+            return await self.worker(request, timeout=self.limits.info_timeout, limits=self.limits)
 
     async def _consumer(self):
         while True:

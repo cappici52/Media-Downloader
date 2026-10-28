@@ -366,6 +366,8 @@ def quality_options(formats):
 def video_info(url, *, use_cookies=True, instagram_product=None):
     if instagram_story(url) and use_cookies and instagram_product is None:
         instagram_product = instagram_story_product(url)
+    elif settings.browser and use_cookies and instagram_post_url(url) and instagram_product is None:
+        instagram_product = instagram_authenticated_product(url)
     options = ydl_options(use_cookies=use_cookies)
     if facebook_story(url):
         options["_story_cookies"] = use_cookies
@@ -572,6 +574,33 @@ def instagram_shortcode(url):
     return match[1] if match else None
 
 
+def instagram_post_url(url):
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    return (host == "instagram.com" or host.endswith(".instagram.com")) and bool(
+        re.fullmatch(r"/(?:p|tv|reels?)/[A-Za-z0-9_-]{1,64}/?", parts.path)
+    )
+
+
+def instagram_authenticated_product(url):
+    ext = gallery_extractor(url, use_cookies=True)
+    try:
+        if not has_login_session(ext.session.cookies, url):
+            raise MediaError("login_required", "ต้องใช้ session Instagram ของบัญชีที่มีสิทธิ์ดูโพสต์นี้")
+        ext.login()
+        product = next(iter(ext.posts()), None)
+        if not isinstance(product, dict):
+            raise MediaError("no_media", "ไม่พบสื่อในโพสต์นี้ หรือบัญชีไม่มีสิทธิ์ดู")
+        children = product.get("carousel_media") or [product]
+        if len(children) > settings.max_items:
+            raise MediaError("item_limit", "โพสต์มีสื่อเกินจำนวนที่กำหนด")
+        for item in [product, *children]:
+            reject_unsupported_media(item)
+        return product
+    finally:
+        ext.session.close()
+
+
 @lru_cache(maxsize=1)
 def instagram_public_product(shortcode):
     """Read public media only, with a fresh anonymous session (no browser cookies).
@@ -733,9 +762,10 @@ def extract_public_first(adapter, url):
                 return adapter(url, use_cookies=False, instagram_product=product)
             except Exception as fallback_error:
                 if friendly_error(fallback_error)["code"] in (
-                    "private",
                     "item_limit",
                     "metadata_limit",
+                    "paywall",
+                    "drm",
                 ):
                     raise
                 failure = fallback_error
@@ -757,9 +787,29 @@ def extract_public_first(adapter, url):
         raise
 
 
-def inspect_media(url):
+def inspect_media(url, cursor=None, *, use_session_first=False):
     checked = validate_url(url)
+    from .profiles import instagram_profile, inspect_profile
+
+    if instagram_profile(checked.url):
+        return inspect_profile(checked.url, cursor), [], []
+    if cursor is not None:
+        raise MediaError("cursor", "โหลดหน้าถัดไปได้เฉพาะลิงก์โปรไฟล์ Instagram")
     url = normalize_post_url(checked.url)
+    product = None
+    authenticated = (
+        use_session_first and settings.browser and has_login_session(worker_cookie_jar(), url)
+    )
+    if authenticated and instagram_post_url(url):
+        product = instagram_authenticated_product(url)
+
+    def inspect_adapter(adapter):
+        if authenticated:
+            return adapter(
+                url, use_cookies=True, **({"instagram_product": product} if product else {})
+            )
+        return extract_public_first(adapter, url)
+
     videos, images, failures = [], [], []
     raw = {}
     if not any(
@@ -767,13 +817,13 @@ def inspect_media(url):
         for domain in ("youtube.com", "youtu.be")
     ):
         try:
-            images = extract_public_first(image_info, url)
+            images = inspect_adapter(image_info)
         except Exception as error:
             if friendly_error(error)["code"] in ("paywall", "drm"):
                 raise
             failures.append(error)
     try:
-        raw, videos = extract_public_first(video_info, url)
+        raw, videos = inspect_adapter(video_info)
     except Exception as error:
         if friendly_error(error)["code"] in ("paywall", "drm"):
             raise
@@ -802,6 +852,12 @@ def inspect_media(url):
         raise preferred or (
             failures[-1] if failures else MediaError("no_media", "ไม่พบวิดีโอหรือรูปในลิงก์นี้")
         )
+    if product:
+        children = product.get("carousel_media") or [product]
+        if len(images) + len(videos) != len(children) or len(videos) != sum(
+            item.get("media_type") == 2 for item in children
+        ):
+            raise MediaError("incomplete_media", "อ่านสื่อในโพสต์นี้ได้ไม่ครบ กรุณาตรวจสอบโพสต์แยกแล้วลองใหม่")
     if len(videos) + len(images) > settings.max_items:
         raise MediaError("item_limit", "โพสต์มีสื่อเกินจำนวนที่กำหนด")
     items = []
@@ -973,10 +1029,14 @@ def transcode(inputs, output, audio=False):
         raise MediaError("size_limit", "ไฟล์ที่แปลงมีขนาดเกินที่กำหนด")
 
 
-def download_media(url, selections, directory, emit):
+def download_media(url, selections, directory, emit, *, inspected=None):
     import requests
+    from .profiles import instagram_profile, download_profile
 
-    public, videos, images = inspect_media(url)
+    if instagram_profile(url):
+        checked = validate_url(url)
+        return download_profile(checked.url, selections, directory, emit)
+    public, videos, images = inspected if inspected is not None else inspect_media(url)
     available = {item["id"]: item for item in public["items"]}
     if (
         not selections
