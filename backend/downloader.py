@@ -3,6 +3,8 @@
 import shutil
 import subprocess
 import zipfile
+import re
+from urllib.parse import urlsplit, urlunsplit
 
 from .settings import settings
 from .validators import URLValidationError, validate_url, validate_network_url
@@ -18,16 +20,44 @@ def friendly_error(error):
     if isinstance(error, (MediaError, URLValidationError)):
         return {"code": error.code, "message": str(error)}
     text = (type(error).__name__ + " " + str(error)).lower()
+    cause = error.__cause__ or error.__context__
+    if cause:
+        text += " " + str(cause).lower()
+    if "cookie" in text and any(
+        word in text for word in ("could not copy", "locked", "permission denied")
+    ):
+        return {
+            "code": "cookies_locked",
+            "message": "อ่าน cookies ของเบราว์เซอร์ไม่ได้ เพราะไฟล์ถูกล็อก กรุณาปิดเบราว์เซอร์ทุกหน้าต่างแล้วลองใหม่",
+        }
     if any(
-        word in text
-        for word in ("private", "authorization", "not available to you", "followers only")
+        word in text for word in ("dpapi", "decrypt", "app-bound", "unsupported cookie version")
+    ):
+        return {
+            "code": "cookies_decryption",
+            "message": "ถอดรหัส cookies ของ Chrome ไม่ได้ แม้ล็อกอินแล้ว อาจต้องใช้ Firefox ในเครื่องแทน",
+        }
+    if any(
+        word in text for word in ("private", "protected", "not available to you", "followers only")
     ):
         return {"code": "private", "message": "โพสต์เป็นส่วนตัวหรือคุณไม่มีสิทธิ์เข้าถึง"}
     if any(
         word in text
-        for word in ("login", "log in", "sign in", "cookies", "authentication", "age-restricted")
+        for word in (
+            "login",
+            "log in",
+            "sign in",
+            "authentication",
+            "authorization",
+            "age-restricted",
+        )
     ):
         return {"code": "login_required", "message": "ต้องล็อกอิน เว็บไซต์อาจไม่อนุญาตให้ดึงโพสต์นี้"}
+    if "cookie" in text:
+        return {
+            "code": "cookies_unavailable",
+            "message": "อ่าน cookies จากเบราว์เซอร์ไม่ได้ กรุณาตรวจสอบเบราว์เซอร์ที่ตั้งค่าไว้",
+        }
     if any(word in text for word in ("403", "429", "blocked", "captcha", "bot", "challenge")):
         return {"code": "platform_blocked", "message": "แพลตฟอร์มบล็อกการดึงข้อมูล กรุณาลองใหม่ภายหลัง"}
     if any(
@@ -65,7 +95,7 @@ class QuietLogger:
         pass
 
 
-def ydl_options():
+def ydl_options(*, use_cookies=True):
     options = {
         "quiet": True,
         "no_warnings": True,
@@ -87,7 +117,7 @@ def ydl_options():
         "overwrites": False,
         "js_runtimes": {"node": {}},
     }
-    if settings.browser:
+    if settings.browser and use_cookies:
         if settings.browser not in (
             "chrome",
             "chromium",
@@ -133,7 +163,7 @@ def allowed_format(fmt):
     )
 
 
-def assert_public(metadata):
+def assert_public(metadata, *, use_cookies=True):
     visibility = metadata.get("availability") or metadata.get("visibility")
     if visibility in ("private", "premium_only", "subscriber_only", "needs_auth", "followers"):
         raise MediaError("private", "รองรับเฉพาะเนื้อหาสาธารณะเท่านั้น")
@@ -146,7 +176,7 @@ def assert_public(metadata):
                 raise MediaError("private", "โพสต์เป็นส่วนตัว รองรับเฉพาะเนื้อหาสาธารณะเท่านั้น")
             if source.get(key) is False:
                 public = True
-    if settings.browser and not public:
+    if settings.browser and use_cookies and not public:
         raise MediaError(
             "public_unverified", "ยืนยันไม่ได้ว่าโพสต์นี้เป็นสาธารณะ จึงไม่ใช้ cookies เพื่อดาวน์โหลดโพสต์นี้"
         )
@@ -166,8 +196,8 @@ def quality_options(formats):
     return options
 
 
-def video_info(url):
-    with make_ydl() as ydl:
+def video_info(url, *, use_cookies=True):
+    with make_ydl(ydl_options(use_cookies=use_cookies)) as ydl:
         raw = ydl.extract_info(url, download=False)
         entries = list(raw.get("entries") or [raw])
         videos = []
@@ -176,18 +206,18 @@ def video_info(url):
                 continue
             if entry.get("is_live") or entry.get("live_status") in ("is_live", "is_upcoming"):
                 raise MediaError("live_not_supported", "ยังไม่รองรับวิดีโอถ่ายทอดสด กรุณาใช้วิดีโอที่จบแล้ว")
-            assert_public(entry)
+            assert_public(entry, use_cookies=use_cookies)
             if len(videos) >= settings.max_items:
                 raise MediaError("item_limit", "โพสต์มีสื่อเกินจำนวนที่กำหนด")
             if (entry.get("duration") or 0) > settings.max_duration:
                 raise MediaError("duration_limit", "วิดีโอยาวเกินเวลาที่กำหนด")
             qualities = quality_options(entry.get("formats") or [entry])
             if qualities:
-                videos.append({"raw": entry, "qualities": qualities})
+                videos.append({"raw": entry, "qualities": qualities, "use_cookies": use_cookies})
         return raw, videos
 
 
-def image_info(url):
+def image_info(url, *, use_cookies=True):
     from gallery_dl import config, extractor
     from gallery_dl.extractor.common import Message
 
@@ -196,19 +226,21 @@ def image_info(url):
     config.set(("extractor",), "retries", 1)
     config.set(("extractor",), "timeout", 20)
     config.set(("extractor",), "proxy", "")
-    if settings.browser:
+    if settings.browser and use_cookies:
         # gallery-dl uses its own local browser-cookie loader.
         config.set(("extractor",), "cookies", [settings.browser])
     ext = extractor.find(url)
     if ext is None:
         raise MediaError("no_media", "ไม่พบรูปในลิงก์นี้")
+    # gallery-dl creates its Session lazily, not in extractor.find().
+    ext.initialize()
     ext.session.trust_env = False
     images = []
     for message in ext:
         if message[0] != Message.Url:
             continue  # Never recurse profile queues or delegate to another downloader.
         media_url, metadata = message[1:3]
-        assert_public(metadata)
+        assert_public(metadata, use_cookies=use_cookies)
         suffix = str(metadata.get("extension", "")).lower()
         if suffix not in ("jpg", "jpeg", "png", "webp", "gif", "avif"):
             continue
@@ -231,9 +263,31 @@ def image_info(url):
     return images
 
 
+def normalize_post_url(url):
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    if any(host == domain or host.endswith("." + domain) for domain in ("x.com", "twitter.com")):
+        path = re.sub(r"(/status/[0-9]+)/(?:photo|video)/[0-9]+/?$", r"\1", parts.path)
+        return urlunsplit((parts.scheme, parts.netloc, path, parts.query, ""))
+    return url
+
+
+def extract_public_first(adapter, url):
+    try:
+        return adapter(url, use_cookies=False)
+    except Exception as error:
+        if not settings.browser or friendly_error(error)["code"] not in (
+            "login_required",
+            "platform_blocked",
+            "extract_failed",
+        ):
+            raise
+    return adapter(url, use_cookies=True)
+
+
 def inspect_media(url):
     checked = validate_url(url)
-    url = checked.url
+    url = normalize_post_url(checked.url)
     videos, images, failures = [], [], []
     raw = {}
     if not any(
@@ -241,11 +295,11 @@ def inspect_media(url):
         for domain in ("youtube.com", "youtu.be")
     ):
         try:
-            images = image_info(url)
+            images = extract_public_first(image_info, url)
         except Exception as error:
             failures.append(error)
     try:
-        raw, videos = video_info(url)
+        raw, videos = extract_public_first(video_info, url)
     except Exception as error:
         failures.append(error)
     if not videos and not images:
@@ -254,7 +308,15 @@ def inspect_media(url):
                 error
                 for error in failures
                 if friendly_error(error)["code"]
-                in ("private", "login_required", "platform_blocked", "public_unverified")
+                in (
+                    "private",
+                    "cookies_locked",
+                    "cookies_decryption",
+                    "cookies_unavailable",
+                    "login_required",
+                    "platform_blocked",
+                    "public_unverified",
+                )
             ),
             None,
         )
@@ -462,7 +524,9 @@ def download_media(url, selections, directory, emit):
                         }
                     )
 
-                options = ydl_options() | {"outtmpl": str(path), "progress_hooks": [hook]}
+                options = ydl_options(
+                    use_cookies=videos[int(item["id"].split("-")[1])].get("use_cookies", False)
+                ) | {"outtmpl": str(path), "progress_hooks": [hook]}
                 with make_ydl(options) as ydl:
                     # Download only the already-inspected format; no external protocols/processors.
                     info = dict(entry)
