@@ -187,6 +187,28 @@ def make_ydl(options=None):
     from yt_dlp import YoutubeDL
     from yt_dlp.networking._urllib import UrllibRH
     from yt_dlp.extractor.twitter import TwitterIE
+    from yt_dlp.extractor.facebook import FacebookIE
+
+    class FacebookStoryIE(FacebookIE):
+        _VALID_URL = r"https?://(?:[\w-]+\.)?facebook\.com/stories/[0-9]+/(?P<id>[A-Za-z0-9_=-]+)/?"
+
+        def _real_extract(self, url):
+            from .facebook_story import video_page
+
+            card, _ = facebook_story_data(
+                url, use_cookies=bool(self._downloader.params.get("_story_cookies"))
+            )
+            reject_unsupported_media(card)
+            self._story_url = url
+            self._story_page = video_page(card)
+            if not self._story_page:
+                raise MediaError("no_media", "Story นี้ไม่มีวิดีโอ")
+            return self._extract_from_url(url, self._match_id(url))
+
+        def _download_webpage(self, url, *args, **kwargs):
+            if url == getattr(self, "_story_url", None):
+                return self._story_page
+            return super()._download_webpage(url, *args, **kwargs)
 
     class ScopedTwitterIE(TwitterIE):
         @classmethod
@@ -218,6 +240,7 @@ def make_ydl(options=None):
         for cookie in worker_cookie_jar():
             ydl.cookiejar.set_cookie(cookie)
     ydl.add_info_extractor(ScopedTwitterIE(ydl))
+    ydl.add_info_extractor(FacebookStoryIE(ydl))
     return ydl
 
 
@@ -343,9 +366,14 @@ def quality_options(formats):
 def video_info(url, *, use_cookies=True, instagram_product=None):
     if instagram_story(url) and use_cookies and instagram_product is None:
         instagram_product = instagram_story_product(url)
-    with make_ydl(ydl_options(use_cookies=use_cookies)) as ydl:
+    options = ydl_options(use_cookies=use_cookies)
+    if facebook_story(url):
+        options["_story_cookies"] = use_cookies
+    with make_ydl(options) as ydl:
         if instagram_product is None:
-            raw = ydl.extract_info(url, download=False)
+            raw = ydl.extract_info(
+                url, download=False, **({"ie_key": "FacebookStory"} if facebook_story(url) else {})
+            )
         else:
             from yt_dlp.extractor.instagram import InstagramIE
 
@@ -499,6 +527,9 @@ def image_info(url, *, use_cookies=True, instagram_product=None):
     if instagram_story(url) and use_cookies and instagram_product is None:
         instagram_product = instagram_story_product(url)
 
+    if facebook_story(url):
+        return facebook_story_images(url, use_cookies=use_cookies)
+
     ext = gallery_extractor(url, use_cookies=use_cookies, instagram_product=instagram_product)
     images = []
     for message in ext:
@@ -605,6 +636,8 @@ def instagram_public_product(shortcode):
 
 def normalize_post_url(url):
     parts = urlsplit(url)
+    if facebook_story(url):
+        return "https://www.facebook.com" + parts.path
     shortcode = instagram_shortcode(url)
     if shortcode:
         return f"https://www.instagram.com/p/{shortcode}/"
@@ -613,6 +646,71 @@ def normalize_post_url(url):
         path = re.sub(r"(/status/[0-9]+)/(?:photo|video)/[0-9]+/?$", r"\1", parts.path)
         return urlunsplit((parts.scheme, parts.netloc, path, parts.query, ""))
     return url
+
+
+def facebook_story(url):
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    return (host == "facebook.com" or host.endswith(".facebook.com")) and bool(
+        re.fullmatch(r"/stories/[0-9]+/[A-Za-z0-9_=-]+/?", parts.path)
+    )
+
+
+@lru_cache(maxsize=2)
+def facebook_story_data(url, *, use_cookies):
+    from .facebook_story import find_card, media_items, protected_media
+
+    identifier = urlsplit(url).path.strip("/").split("/")[-1]
+    with make_ydl(ydl_options(use_cookies=use_cookies)) as ydl:
+        authenticated = has_login_session(ydl.cookiejar, url)
+        page = ydl.get_info_extractor("Facebook")._download_webpage(url, identifier)
+        try:
+            card = find_card(page, identifier)
+        except ValueError:
+            raise MediaError("metadata_limit", "ข้อมูล Story มีขนาดใหญ่เกินกำหนด") from None
+        if not card:
+            if not authenticated:
+                raise MediaError("login_required", "Facebook Story ต้องใช้ session ของบัญชีที่มีสิทธิ์ดู")
+            raise MediaError(
+                "story_unavailable", "ไม่พบ Facebook Story นี้ อาจหมดอายุ ถูกลบ หรือบัญชีไม่มีสิทธิ์ดู"
+            )
+        assert_media_access(card, use_cookies=use_cookies, authenticated=authenticated)
+        media = media_items(card)
+        if len(media) > settings.max_items:
+            raise MediaError("item_limit", "Story มีสื่อเกินจำนวนที่กำหนด")
+        for item in media:
+            reject_unsupported_media(item)
+            if protected_media(item):
+                raise MediaError("drm", "ไม่รองรับสื่อที่มี DRM")
+        return card, ydl.cookiejar
+
+
+def facebook_story_images(url, *, use_cookies):
+    from .facebook_story import media_items
+
+    card, cookies = facebook_story_data(url, use_cookies=use_cookies)
+    images = []
+    for item in media_items(card):
+        if item.get("__typename") != "Photo":
+            continue
+        image = item.get("image") or item.get("viewer_image") or {}
+        media_url = image.get("uri")
+        if not isinstance(media_url, str):
+            continue
+        validate_network_url(media_url)
+        suffix = urlsplit(media_url).path.rsplit(".", 1)[-1].lower()
+        if suffix not in ("jpg", "jpeg", "png", "webp"):
+            suffix = "jpg"
+        images.append(
+            {
+                "url": media_url,
+                "extension": suffix,
+                "title": "Facebook Story",
+                "headers": {"Referer": "https://www.facebook.com/"},
+                "cookies": cookies,
+            }
+        )
+    return images
 
 
 def extract_public_first(adapter, url):
@@ -627,7 +725,7 @@ def extract_public_first(adapter, url):
             host == domain or host.endswith("." + domain) for domain in ("x.com", "twitter.com")
         )
         retry_codes = ("login_required", "private", "platform_blocked", "extract_failed")
-        if shortcode or is_x or instagram_story(url):
+        if shortcode or is_x or instagram_story(url) or facebook_story(url):
             retry_codes += ("no_media",)
         if shortcode and code in retry_codes:
             try:

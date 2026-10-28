@@ -169,6 +169,12 @@ Highlights แบบ `/stories/highlights/HIGHLIGHT_ID/` จะแสดงส�
 ระบบใช้ reel ID ของ Highlights และอ่าน query จากหน้า Highlights ของอัลบั้มนั้น
 ระบบอ่าน query ของรายการ Story จากหน้า Story โดยตรง เพราะหน้าโปรไฟล์อาจไม่มี query นี้
 Story ต้องยังไม่หมดอายุ/ถูกลบ และบัญชีต้องมีสิทธิ์ดู; การบล็อกของแพลตฟอร์มยังทำให้โหลดไม่ได้
+Facebook Story แบบ `/stories/OWNER_ID/STORY_ID/` อ่านข้อมูลสื่อจากหน้า Story
+โดยเลือกเฉพาะ Story ID ในลิงก์ เพื่อไม่หยิบสื่อจาก Story อื่นในถาดมาดาวน์โหลด
+ใช้ session Chrome ของบัญชีที่มีสิทธิ์ดูเมื่อจำเป็น และใช้ parser ของ yt-dlp สำหรับวิดีโอ
+ตัว parser แยกรูปจาก attachment แบบ Photo; การรองรับรูปทดสอบด้วย fixture
+ยังไม่รองรับการไล่โหลด Facebook Story ทั้งถาดหรือ Story ที่หมดอายุ/เข้าไม่ถึง
+สื่อที่มี license/ธง DRM จะถูกปฏิเสธ ส่วน certificate ทั่วไปอย่างเดียวไม่ถือว่าเข้ารหัส
 Docker ไม่มี profile browser ของ host และคู่มือนี้ไม่แนะนำให้ mount profile เข้า container
 
 ## API
