@@ -47,6 +47,7 @@ class StoryTests(unittest.TestCase):
     def test_story_links_remain_intact_and_do_not_use_public_post_query(self):
         self.assertTrue(downloader.instagram_story(URL))
         self.assertTrue(downloader.instagram_story(URL + "?source=fixture"))
+        self.assertTrue(downloader.instagram_story("https://instagram.com/stories/fixture/"))
         self.assertFalse(
             downloader.instagram_story("https://instagram.com.evil.test/stories/f/123/")
         )
@@ -74,7 +75,86 @@ class StoryTests(unittest.TestCase):
         if authenticated:
             ext.session.cookies.set("sessionid", "fixture", domain=".instagram.com")
         ext.api._call.return_value = {"items": [product_fixture()]}
+        ext.config.return_value = "memory"
         return ext
+
+    def test_story_collection_preserves_all_authorized_close_friends_media(self):
+        from gallery_dl.extractor.instagram import InstagramAPI
+
+        ext = self.extractor()
+        items = [product_fixture(), product_fixture(True)]
+        items[1]["pk"] = "987654321"
+        for item in items:
+            item["is_besties"] = True
+        reel = {"user": items[0]["user"], "items": items}
+        with (
+            patch.object(downloader, "gallery_extractor", return_value=ext),
+            patch.object(
+                InstagramAPI, "user_by_web", return_value={"id": "123", "username": "fixture"}
+            ),
+            patch.object(InstagramAPI, "reels_media", return_value=iter([reel])) as reels,
+        ):
+            product = downloader.instagram_story_product("https://instagram.com/stories/fixture/")
+        self.assertEqual(
+            [item["pk"] for item in product["carousel_media"]], ["123456789", "987654321"]
+        )
+        self.assertTrue(all(item["is_besties"] for item in product["carousel_media"]))
+        reels.assert_called_once_with(("123",))
+
+    def test_collection_query_and_tokens_are_loaded_from_story_page(self):
+        from gallery_dl.extractor.instagram import InstagramAPI
+
+        ext = self.extractor()
+
+        def read_reels(api, reel_ids):
+            api._extract_fb_tokens("/fixture")
+            api._extract_opname_info("StoryQuery", "/fixture")
+            return iter([{"items": [product_fixture()]}])
+
+        with (
+            patch.object(downloader, "gallery_extractor", return_value=ext),
+            patch.object(
+                InstagramAPI, "user_by_web", return_value={"id": "123", "username": "fixture"}
+            ),
+            patch.object(InstagramAPI, "reels_media", read_reels),
+            patch.object(
+                InstagramAPI, "_extract_fb_tokens", return_value=("fixture", "fixture")
+            ) as tokens,
+            patch.object(InstagramAPI, "_extract_opname_info", return_value=("123", [])) as query,
+        ):
+            downloader.instagram_story_product("https://instagram.com/stories/fixture/")
+        tokens.assert_called_once_with("/stories/fixture")
+        query.assert_called_once_with("StoryQuery", "/stories/fixture")
+
+    def test_collection_without_login_does_not_request_user_or_media(self):
+        ext = self.extractor(authenticated=False)
+        with (
+            patch.object(downloader, "gallery_extractor", return_value=ext),
+            self.assertRaises(MediaError) as error,
+        ):
+            downloader.instagram_story_product("https://instagram.com/stories/fixture/")
+        self.assertEqual(error.exception.code, "login_required")
+        ext.api.user_by_web.assert_not_called()
+
+    def test_collection_limits_and_paid_restrictions_are_preserved(self):
+        from gallery_dl.extractor.instagram import InstagramAPI
+
+        for items, expected in (
+            ([product_fixture()] * (downloader.settings.max_items + 1), "item_limit"),
+            ([dict(product_fixture(), is_paid_content=True)], "paywall"),
+            ([], "story_unavailable"),
+        ):
+            ext = self.extractor()
+            with (
+                patch.object(downloader, "gallery_extractor", return_value=ext),
+                patch.object(
+                    InstagramAPI, "user_by_web", return_value={"id": "123", "username": "fixture"}
+                ),
+                patch.object(InstagramAPI, "reels_media", return_value=iter([{"items": items}])),
+                self.assertRaises(MediaError) as error,
+            ):
+                downloader.instagram_story_product("https://instagram.com/stories/fixture/")
+            self.assertEqual(error.exception.code, expected)
 
     def test_exact_story_media_is_read_without_profile_or_reels_queries(self):
         ext = self.extractor()

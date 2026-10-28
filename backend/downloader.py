@@ -423,23 +423,60 @@ def instagram_story(url):
     parts = urlsplit(url)
     host = parts.hostname or ""
     return (host == "instagram.com" or host.endswith(".instagram.com")) and bool(
-        re.fullmatch(r"/stories/(?!highlights/)[^/]+/[0-9]+/?", parts.path)
+        re.fullmatch(
+            r"/stories/(?!(?:highlights|me)(?:/|$))[A-Za-z0-9._]+(?:/[0-9]+)?/?", parts.path
+        )
     )
 
 
 def instagram_story_product(url):
-    """Read one authorized Story through gallery-dl's authenticated media API."""
+    """Read authorized Stories through gallery-dl's authenticated media API."""
     ext = gallery_extractor(url, use_cookies=True)
     try:
         if not has_login_session(ext.session.cookies, url):
             raise MediaError("login_required", "Story ต้องใช้ session Instagram ของบัญชีที่มีสิทธิ์ดู")
         ext.login()
-        story_id = urlsplit(url).path.strip("/").split("/")[-1]
-        data = ext.api._call(f"/v1/media/{story_id}/info/")
+        parts = urlsplit(url).path.strip("/").split("/")
+        if len(parts) == 3:
+            data = ext.api._call(f"/v1/media/{parts[2]}/info/")
+        else:
+            from gallery_dl.extractor.instagram import InstagramAPI
+
+            story_path = f"/stories/{parts[1]}"
+
+            class StoryAPI(InstagramAPI):
+                # Read Story query IDs and tokens from the Story page itself;
+                # the profile page need not include these operations.
+                def _extract_fb_tokens(self, path):
+                    return super()._extract_fb_tokens(story_path)
+
+                def _extract_opname_info(self, opname, path):
+                    return super()._extract_opname_info(opname, story_path)
+
+            ext.api = StoryAPI(ext)
+            user = ext.api.user_by_web(parts[1])
+            ext._assign_user(user)
+            user_id = user["id"]
+            data = next(iter(ext.api.reels_media((user_id,))), {})
         items = data.get("items") or []
         if not items:
             raise MediaError("story_unavailable", "ไม่พบ Story นี้ อาจหมดอายุ ถูกลบ หรือบัญชีไม่มีสิทธิ์ดู")
-        product = items[0]
+        if len(parts) == 3:
+            product = items[0]
+        else:
+            reject_unsupported_media(data)
+            if len(items) > settings.max_items:
+                raise MediaError("item_limit", "Story มีสื่อเกินจำนวนที่กำหนด")
+            for item in items:
+                reject_unsupported_media(item)
+            product = {
+                "pk": str(user_id),
+                "code": "Story",
+                "caption": None,
+                "user": data.get("user") or items[0].get("user") or {},
+                "taken_at": items[0].get("taken_at"),
+                "carousel_media": items,
+            }
         reject_unsupported_media(product)
         if len(product.get("carousel_media") or [product]) > settings.max_items:
             raise MediaError("item_limit", "Story มีสื่อเกินจำนวนที่กำหนด")
