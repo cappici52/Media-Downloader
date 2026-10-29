@@ -121,9 +121,10 @@ load failure. Success emits pixel media tiles. Error, URL edits and cancellation
 reset to idle; stale results cannot emit tiles or open the picker.
 
 The owner's explicit request for animated feedback sets cat motion ON by default.
-A visible `Cat: animated/still` button beside language owns this app preference.
+A visible `Animation: on/off` button beside language owns this app preference.
 `cat-motion` in localStorage persists it across Chrome restarts. This choice controls
-only the cat; the rest of the interface continues to respect OS reduced motion.
+the explicitly requested cat animation and loading paw spin; all other motion
+continues to respect OS reduced motion.
 Turning the cat off immediately stops its frames and skips success motion/delay.
 `frontend/i18n.js` owns Thai/English UI copy, dynamic counters/status templates,
 accessible labels, placeholders and document title. Static leaf copy is marked
@@ -172,3 +173,22 @@ Video duration is unlimited by default (`MAX_DURATION_SECONDS=0`). The limits ro
 announces this separately from per-job byte/item/TTL limits, in both locales.
 Highest quality means the highest available supported source stream, not upscaling
 or recovering the pre-upload file. Video is remuxed without re-encoding.
+
+
+## Pixel paw cursor
+
+One 32px code-native pixel paw owns all fine-pointer visuals in the app. Blue pads
+mean default; gold means clickable/text, with a small caret for editing; red with a
+cross means disabled. A press scales the paw; busy rotates it in eight 900ms steps.
+The shared animation switch can stop both paw rotation and cat animation.
+`selectionState` owns the global busy flag for inspection, profile pagination,
+submission and active jobs. Native media waiting events and loading preview images
+also contribute to the cursor state. Completion/error/pause clears the spinner.
+
+A decorative, inert, aria-hidden manual popover renders above the native media
+dialog. It follows pointer position without intercepting hit testing, focus, clicks,
+text selection or scrolling; opening the picker raises it in the top layer. Keyboard
+and touch behavior stay native. Fine-pointer/hover capability gates enhancement;
+blur, pointer leave, touch, context menus and document hiding restore native SVG
+paw fallback. Unsupported popovers retain that fallback. Forced colors uses the
+system cursor. Cursor data never leaves the page or enters persistent storage.

@@ -36,7 +36,7 @@ function updateCatMotion() {
   document.documentElement.dataset.catMotion = catMotion ? "on" : "off";
   const toggle = $("cat-motion-toggle");
   toggle.setAttribute("aria-pressed", String(catMotion));
-  MediaI18n.text(toggle, catMotion ? "แมว: เคลื่อนไหว" : "แมว: ภาพนิ่ง");
+  MediaI18n.text(toggle, catMotion ? "แอนิเมชัน: เปิด" : "แอนิเมชัน: ปิด");
 }
 updateCatMotion();
 $("cat-motion-toggle").addEventListener("click", () => {
@@ -95,6 +95,7 @@ function step(index) {
 }
 function busy(button, value) { button.disabled = value; button.setAttribute("aria-busy", String(value)); }
 function selectionState() {
+  document.documentElement.dataset.appBusy = String(!!inspection || submitting || !!activeJob || !!profileLoading);
   const count = [...selected.values()].filter(Boolean).length;
   MediaI18n.text($("selection-count"), media ? `เลือก ${numbers.format(count)} / ${numbers.format(media.items.length)} ${media.type === "profile" ? "โพสต์" : "รายการ"}` : "");
   const mediaCount = media?.type === "profile" ? media.items.filter((item) => selected.get(item.id)).reduce((total, item) => total + (item.media_count || 1), 0) : count;
@@ -155,6 +156,7 @@ function openPicker() {
   if (!media || picker.open) return;
   pickerTrigger = document.activeElement;
   picker.showModal(); document.documentElement.classList.add("picker-open");
+  window.PawCursor?.raise();
 }
 $("open-picker").addEventListener("click", openPicker);
 $("close-picker").disabled = false; $("close-viewer").disabled = false;
@@ -483,3 +485,72 @@ $("language-toggle").addEventListener("click", toggleLanguage);
 $("picker-language-toggle").addEventListener("click", toggleLanguage);
 $("language-toggle").disabled = false;
 $("picker-language-toggle").disabled = false;
+
+
+// Pointer visuals are decorative: never intercept focus, clicks, selection or drag.
+(() => {
+  const cursor = $("paw-cursor"), root = document.documentElement;
+  const fine = matchMedia("(any-pointer: fine) and (any-hover: hover)");
+  const contrast = matchMedia("(forced-colors: active)");
+  if (!cursor.showPopover) return; // Keep native SVG paw cursors as a safe fallback.
+  let point = null, visible = false;
+  const waitingMedia = new Set();
+  function allowed() { return fine.matches && !contrast.matches; }
+  function hide() {
+    visible = false; delete root.dataset.pawCursor;
+    cursor.dataset.visible = "false"; cursor.dataset.pressed = "false";
+  }
+  function raise() {
+    if (!visible || !allowed()) return;
+    try {
+      if (cursor.matches(":popover-open")) cursor.hidePopover();
+      cursor.showPopover();
+    } catch { hide(); }
+  }
+  function update() {
+    if (!visible || !point || !allowed()) return;
+    const target = document.elementFromPoint(point.x, point.y);
+    let kind = "default";
+    const preview = target?.closest(".tile-preview");
+    const previewImage = preview?.querySelector("img");
+    if (root.dataset.appBusy === "true" || waitingMedia.size || target?.closest('[aria-busy="true"]') || (previewImage?.getAttribute("src") && !previewImage.complete)) kind = "busy";
+    else if (target?.closest(":disabled, [aria-disabled='true']")) kind = "disabled";
+    else if (target?.closest('input:not([type="checkbox"]):not([type="button"]), textarea, [contenteditable="true"]')) kind = "text";
+    else if (target?.closest('button, a[href], label, select, input[type="checkbox"], video, [role="button"]')) kind = "pointer";
+    cursor.dataset.kind = kind;
+  }
+  cursor.addEventListener("toggle", () => { if (visible && !cursor.matches(":popover-open")) hide(); });
+  document.addEventListener("pointermove", event => {
+    if (event.pointerType === "touch" || !allowed()) { hide(); return; }
+    point = { x: event.clientX, y: event.clientY };
+    if (!document.hasFocus()) { hide(); return; }
+    if (!visible) {
+      visible = true; raise();
+      if (!visible) return;
+      root.dataset.pawCursor = "on"; cursor.dataset.visible = "true";
+    }
+    if (!cursor.matches(":popover-open")) { raise(); if (!visible) return; }
+    cursor.style.setProperty("--paw-x", point.x + "px"); cursor.style.setProperty("--paw-y", point.y + "px");
+    update();
+  }, { passive: true });
+  document.addEventListener("pointerdown", event => {
+    if (event.pointerType === "touch") hide();
+    else cursor.dataset.pressed = "true";
+  }, { passive: true });
+  document.addEventListener("pointerup", () => { cursor.dataset.pressed = "false"; }, { passive: true });
+  document.addEventListener("pointercancel", hide, { passive: true });
+  document.addEventListener("pointerout", event => { if (!event.relatedTarget) hide(); }, { passive: true });
+  document.addEventListener("contextmenu", hide);
+  window.addEventListener("blur", hide);
+  document.addEventListener("visibilitychange", () => { if (document.hidden) hide(); });
+  fine.addEventListener("change", () => { if (!allowed()) hide(); });
+  contrast.addEventListener("change", () => { if (!allowed()) hide(); });
+  document.addEventListener("fullscreenchange", raise);
+  document.addEventListener("load", update, true); document.addEventListener("error", update, true);
+  document.addEventListener("waiting", event => { if (event.target instanceof HTMLMediaElement) { waitingMedia.add(event.target); update(); } }, true);
+  for (const name of ["playing", "pause", "ended", "error", "emptied"]) {
+    document.addEventListener(name, event => { waitingMedia.delete(event.target); update(); }, true);
+  }
+  new MutationObserver(update).observe(root, { attributes: true, subtree: true, attributeFilter: ["data-app-busy", "aria-busy", "disabled"] });
+  window.PawCursor = { raise };
+})();

@@ -2,6 +2,8 @@
 // UI copy uses canonical Thai sources. Only language preference is stored.
 window.MediaI18n = (() => {
   const dictionary = {
+  "แอนิเมชัน: เปิด": "Animation: on",
+  "แอนิเมชัน: ปิด": "Animation: off",
   "แมว: เคลื่อนไหว": "Cat: animated",
   "แมว: ภาพนิ่ง": "Cat: still",
   "พบสื่อแล้ว กำลังจัดให้คุณ…": "Media found. Getting it ready…",
