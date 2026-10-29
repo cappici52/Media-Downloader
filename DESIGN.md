@@ -85,7 +85,7 @@ Progress uses segmented cyan blocks on a dark track.
 
 ## Shapes
 Square controls, thumbnail frames, workspace, dialog and step counters. Pixel
-grid SVG geometry is crisp at small favicon and larger empty-state sizes.
+grid geometry remains crisp at small favicon and larger empty-state sizes.
 Native checkbox and select geometry is explicitly accepted, including OS popup style.
 
 ## Components
@@ -102,8 +102,14 @@ selection. Native selects own quality; native video controls own playback.
 Global CSS owns scrollbar behavior. No toast system is necessary.
 The canonical `frontend/cat.svg` owns the header logo, empty state and favicon.
 The viewer-left eye is blue, viewer-right gold; open mouth releases photo/video
-rectangles. It uses SVG rectangles/stepped paths and `crispEdges`; no production
-bitmap is needed. A generated full-screen concept established the visual direction.
+rectangles. The user's supplied crop is the character reference: sitting fluffy
+white cat, curled tail, pink open mouth, landscape tile and blue play tile.
+`frontend/cat-reference.png` is the transparent production sprite generated from
+that reference. `cat.svg` embeds that unchanged PNG with a content-bound viewBox,
+so all three surfaces share one self-contained image and the existing asset route.
+Desktop header is 88×64px, empty state 184×120px; mobile uses 64×48 and 160×104px.
+The icon URL carries `?v=2` to refresh browser favicon caches. A generated full-screen
+concept established the original visual direction.
 No decorative animation; reduced motion disables any future transitions.
 `frontend/i18n.js` owns Thai/English UI copy, dynamic counters/status templates,
 accessible labels, placeholders and document title. Static leaf copy is marked
