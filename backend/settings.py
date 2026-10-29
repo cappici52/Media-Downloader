@@ -12,10 +12,17 @@ def positive(name, default):
     return value
 
 
+def duration_limit():
+    value = int(os.getenv("MAX_DURATION_SECONDS", 0))
+    if value < 0:
+        raise ValueError("MAX_DURATION_SECONDS must be zero or positive")
+    return value
+
+
 @dataclass(frozen=True)
 class Settings:
     max_bytes: int = positive("MAX_FILE_MB", 500) * 1024 * 1024
-    max_duration: int = positive("MAX_DURATION_SECONDS", 1800)
+    max_duration: int = duration_limit()
     max_items: int = positive("MAX_ITEMS", 100)
     workers: int = positive("MAX_CONCURRENT_JOBS", 2)
     queue_size: int = positive("MAX_QUEUED_JOBS", 10)

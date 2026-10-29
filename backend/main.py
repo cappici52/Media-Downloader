@@ -126,7 +126,7 @@ class InfoQuery(InfoRequest):
 class Selection(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     id: str = Field(pattern=r"^(?:(video|image)-[0-9]{1,3}|post-[A-Za-z0-9_-]{1,28})$")
-    quality: str | None = Field(default=None, pattern=r"^(mp3|[0-9]{2,5}p)$")
+    quality: str | None = Field(default=None, pattern=r"^(best|mp3|[0-9]{2,5}p)$")
 
 
 class DownloadRequest(InfoRequest):

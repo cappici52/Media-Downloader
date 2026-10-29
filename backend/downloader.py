@@ -431,7 +431,7 @@ def video_info(url, *, use_cookies=True, instagram_product=None):
             )
             if len(videos) >= settings.max_items:
                 raise MediaError("item_limit", "โพสต์มีสื่อเกินจำนวนที่กำหนด")
-            if (entry.get("duration") or 0) > settings.max_duration:
+            if settings.max_duration and (entry.get("duration") or 0) > settings.max_duration:
                 raise MediaError("duration_limit", "วิดีโอยาวเกินเวลาที่กำหนด")
             qualities = quality_options(entry.get("formats") or [entry])
             if is_tiktok(url) and not any(
@@ -1088,7 +1088,11 @@ def transcode(inputs, output, audio=False):
             raise MediaError(
                 "duration_unknown", "ตรวจสอบความยาววิดีโอไม่ได้ จึงไม่สามารถดาวน์โหลดได้"
             ) from None
-        if result.returncode or not 0 < duration <= settings.max_duration:
+        if (
+            result.returncode
+            or not 0 < duration < float("inf")
+            or (settings.max_duration and duration > settings.max_duration)
+        ):
             raise MediaError("duration_limit", "วิดีโอยาวเกินเวลาที่กำหนดหรือไม่มีข้อมูลความยาว")
     args = [executable, "-nostdin", "-v", "error", "-y"]
     for path in inputs:
@@ -1106,6 +1110,41 @@ def transcode(inputs, output, audio=False):
     if output.stat().st_size >= settings.max_bytes // 2:
         output.unlink(missing_ok=True)
         raise MediaError("size_limit", "ไฟล์ที่แปลงมีขนาดเกินที่กำหนด")
+
+
+def select_video_formats(formats, quality="best"):
+    """Choose original streams; ffmpeg remuxes them without resizing/re-encoding."""
+    formats = [f for f in formats if allowed_format(f)]
+    audios = [
+        f for f in formats if f.get("vcodec") == "none" and f.get("acodec") not in (None, "none")
+    ]
+    if quality == "mp3":
+        candidates = audios or [f for f in formats if f.get("acodec") not in (None, "none")]
+        if not candidates:
+            raise MediaError("no_media", "ไม่พบเสียงที่รองรับในคลิปนี้")
+        return [max(candidates, key=lambda f: f.get("abr") or f.get("tbr") or 0)]
+    candidates = [
+        f
+        for f in formats
+        if f.get("vcodec") not in (None, "none")
+        and (quality == "best" or (f.get("height") and f["height"] <= int(quality[:-1])))
+    ]
+    if not candidates:
+        raise MediaError("no_media", "ไม่พบวิดีโอที่รองรับในคลิปนี้")
+    chosen = [
+        max(
+            candidates,
+            key=lambda f: (
+                f.get("height") or 0,
+                f.get("width") or 0,
+                f.get("fps") or 0,
+                f.get("tbr") or 0,
+            ),
+        )
+    ]
+    if chosen[0].get("acodec") == "none" and audios:
+        chosen.append(max(audios, key=lambda f: f.get("abr") or f.get("tbr") or 0))
+    return chosen
 
 
 def download_media(url, selections, directory, emit, *, inspected=None):
@@ -1151,31 +1190,12 @@ def download_media(url, selections, directory, emit, *, inspected=None):
                             stream.flush()
                             check_size(directory)
         else:
-            quality = selection.get("quality")
-            if quality not in {q["id"] for q in item["qualities"]}:
+            quality = selection.get("quality") or "best"
+            if quality != "best" and quality not in {q["id"] for q in item["qualities"]}:
                 raise MediaError("selection", "คุณภาพที่เลือกไม่อยู่ในรายการที่รองรับ")
             entry = videos[int(item["id"].split("-")[1])]["raw"]
-            formats = [f for f in entry.get("formats", [entry]) if allowed_format(f)]
             audio_only = quality == "mp3"
-            audios = [
-                f
-                for f in formats
-                if f.get("vcodec") == "none" and f.get("acodec") not in (None, "none")
-            ]
-            if audio_only:
-                candidates = audios or [f for f in formats if f.get("acodec") not in (None, "none")]
-                chosen = [max(candidates, key=lambda f: f.get("abr") or f.get("tbr") or 0)]
-            else:
-                candidates = [
-                    f
-                    for f in formats
-                    if f.get("height")
-                    and f["height"] <= int(quality[:-1])
-                    and f.get("vcodec") != "none"
-                ]
-                chosen = [max(candidates, key=lambda f: (f.get("height") or 0, f.get("tbr") or 0))]
-                if chosen[0].get("acodec") == "none" and audios:
-                    chosen.append(max(audios, key=lambda f: f.get("abr") or f.get("tbr") or 0))
+            chosen = select_video_formats(entry.get("formats", [entry]), quality)
             paths = []
             for index, fmt in enumerate(chosen):
                 path = base.with_suffix(

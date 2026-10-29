@@ -314,7 +314,7 @@ class ProfileTests(unittest.TestCase):
             client.post("/info", json={"url": URL, "cursor": "x" * 4097}).status_code, 422
         )
 
-    def test_bulk_video_prefers_at_most_720p(self):
+    def test_bulk_video_uses_highest_source_quality(self):
         with tempfile.TemporaryDirectory() as temp:
             inspection = (
                 {
@@ -331,7 +331,7 @@ class ProfileTests(unittest.TestCase):
             )
 
             def download(url, choices, folder, emit, **kwargs):
-                self.assertEqual(choices, [{"id": "video-0", "quality": "720p"}])
+                self.assertEqual(choices, [{"id": "video-0", "quality": "best"}])
                 path = folder / "media.mkv"
                 path.write_bytes(b"fixture")
                 return path

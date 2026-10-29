@@ -351,10 +351,7 @@ def download_profile(url, selections, directory, emit):
                         raise MediaError(
                             "no_media", "โพสต์มีคลิปที่ยังไม่รองรับ กรุณาดาวน์โหลดโพสต์นี้แยกต่างหาก"
                         )
-                    heights = sorted(int(q[:-1]) for q in qualities)
-                    choice["quality"] = (
-                        str(max((h for h in heights if h <= 720), default=heights[0])) + "p"
-                    )
+                    choice["quality"] = "best"
                 choices.append(choice)
             folder = directory / f"post-{index + 1:03}"
             folder.mkdir()
