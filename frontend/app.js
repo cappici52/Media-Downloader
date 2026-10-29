@@ -25,8 +25,26 @@ function prepareCatFrame(image) {
     else { image.addEventListener("load", loaded, { once: true }); image.addEventListener("error", loaded, { once: true }); }
   });
 }
-const catFramesReady = Promise.all([...$("cat-scene").querySelectorAll(".cat-chew")].map(prepareCatFrame))
-  .then(frames => frames.every(Boolean));
+// A native PNG sheet avoids Chrome's SVG-view decoding and fragment cache.
+const catSprite = new Image();
+const spriteURL = getComputedStyle($("cat-scene")).getPropertyValue("--cat-chew-image").trim();
+catSprite.src = spriteURL.slice(4, -1).trim().replace(/^["']|["']$/g, "");
+const catFramesReady = prepareCatFrame(catSprite);
+let catMotion = true;
+try { catMotion = localStorage.getItem("cat-motion") !== "off"; } catch { /* Optional preference storage. */ }
+function updateCatMotion() {
+  document.documentElement.dataset.catMotion = catMotion ? "on" : "off";
+  const toggle = $("cat-motion-toggle");
+  toggle.setAttribute("aria-pressed", String(catMotion));
+  MediaI18n.text(toggle, catMotion ? "แมว: เคลื่อนไหว" : "แมว: ภาพนิ่ง");
+}
+updateCatMotion();
+$("cat-motion-toggle").addEventListener("click", () => {
+  catMotion = !catMotion;
+  try { localStorage.setItem("cat-motion", catMotion ? "on" : "off"); } catch { /* Optional preference storage. */ }
+  updateCatMotion();
+});
+$("cat-motion-toggle").disabled = false;
 
 let catStartedAt = 0;
 function setCatState(state) {
@@ -54,7 +72,7 @@ function waitForCat(milliseconds, signal) {
   });
 }
 async function finishCat(signal) {
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { setCatState("idle"); return; }
+  if (!catMotion) { setCatState("idle"); return; }
   await Promise.race([catFramesReady, waitForCat(800, signal)]);
   if (signal.aborted) throw new DOMException("Aborted", "AbortError");
   await waitForCat(Math.max(0, 280 - (performance.now() - catStartedAt)), signal);

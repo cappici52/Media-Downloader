@@ -112,18 +112,19 @@ The icon URL carries `?v=3` to refresh browser favicon caches. A generated full-
 concept established the original visual direction.
 Inspection animation follows real request state: idle → chewing while `/info`
 is pending → spitting for 620ms after a successful non-empty result → media picker.
-`cat-chewing.png` contains two generated, aligned mouth frames from the same cat.
-The self-contained `cat.svg` exposes closed/open SVG views; CSS alternates two
-prepared images every 220ms. Frames prepare on page load; native SVG decode
-errors or a decode taking over 200ms fall back to successful load/natural dimensions.
-A cold/returning Chrome session cannot permanently suppress an otherwise loaded
-sprite. The minimum chewing beat begins when frames become visible, and waiting
-for animation readiness never holds a successful result for more than 800ms. A fixed 184×120px scene (160×104 mobile) reserves
-layout. Failed frame decoding retains the original cat. Success returns the
-original open-mouth/media sprite and briefly emits code-native pixel media tiles.
-Error, URL edits and cancellation reset to idle; stale requests cannot emit tiles
-or open the picker. Reduced-motion preference uses a static original cat and skips
-the success delay. No decorative motion runs outside inspection.
+`cat-chewing.png` contains two aligned generated mouth frames. CSS uses that PNG
+sheet directly with two background positions; no SVG fragments are used for motion.
+The self-contained static `cat.svg` remains the logo/favicon/idle asset. A fixed
+184×120px scene (160×104 mobile) reserves layout. Frame loading prepares on page
+load, tolerates native decode errors/stalls, and keeps a static fallback for real
+load failure. Success emits pixel media tiles. Error, URL edits and cancellation
+reset to idle; stale results cannot emit tiles or open the picker.
+
+The owner's explicit request for animated feedback sets cat motion ON by default.
+A visible `Cat: animated/still` button beside language owns this app preference.
+`cat-motion` in localStorage persists it across Chrome restarts. This choice controls
+only the cat; the rest of the interface continues to respect OS reduced motion.
+Turning the cat off immediately stops its frames and skips success motion/delay.
 `frontend/i18n.js` owns Thai/English UI copy, dynamic counters/status templates,
 accessible labels, placeholders and document title. Static leaf copy is marked
 `data-i18n`; runtime copy binds canonical Thai sources to existing text/attribute
@@ -132,7 +133,7 @@ options or video elements. Selection, progress, playback and keyboard focus surv
 Unknown Thai backend messages get a readable English access/retry fallback; known
 backend messages use specific translations. Source titles and captions are never
 translated. Header and modal each expose a language switch, because the header is
-inert while the modal is open. Only `media-language` is stored in localStorage;
+inert while the modal is open. `media-language` and `cat-motion` store only UI preferences in localStorage;
 no source URL or credentials are stored. Default Thai is restored if storage is
 blocked or the preference is invalid.
 

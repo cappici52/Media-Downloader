@@ -101,10 +101,12 @@ class CatAnimationTests(unittest.TestCase):
             expect(page.locator("#media-picker")).not_to_be_visible()
 
             page.emulate_media(reduced_motion="reduce")
+            page.locator("#cat-motion-toggle").click()
+            expect(page.locator("#cat-motion-toggle")).to_have_attribute("aria-pressed", "false")
             page.evaluate("catStates.length=0")
             begin()
             expect(page.locator(".cat-scene .empty-cat")).to_have_css("opacity", "1")
-            expect(page.locator(".cat-chew-open")).to_have_css("display", "none")
+            expect(page.locator(".cat-chew-open")).to_have_css("opacity", "0")
             pending.pop(0).fulfill(json=result)
             expect(page.locator("#media-picker")).to_be_visible()
             self.assertNotIn("spitting", page.evaluate("catStates"))
@@ -117,7 +119,7 @@ class CatAnimationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as profile, sync_playwright() as playwright:
             for decode_mode in ("reject", "pending"):
                 context = playwright.chromium.launch_persistent_context(
-                    profile, headless=True, channel="chrome", reduced_motion="no-preference"
+                    profile, headless=True, channel="chrome", reduced_motion="reduce"
                 )
                 page = context.pages[0]
                 # Chrome may reject decode() for an otherwise loaded SVG fragment.
@@ -151,4 +153,24 @@ class CatAnimationTests(unittest.TestCase):
                     }
                 )
                 expect(page.locator("#media-picker")).to_be_visible()
+                if decode_mode == "pending":
+                    page.keyboard.press("Escape")
+                    page.locator("#cat-motion-toggle").click()
+                    expect(page.locator("#cat-motion-toggle")).to_have_attribute(
+                        "aria-pressed", "false"
+                    )
                 context.close()
+
+            context = playwright.chromium.launch_persistent_context(
+                profile, headless=True, channel="chrome", reduced_motion="reduce"
+            )
+            page = context.pages[0]
+            page.goto(os.environ["MEDIA_UI_URL"])
+            expect(page.locator("#cat-motion-toggle")).to_have_attribute("aria-pressed", "false")
+            page.locator("#cat-motion-toggle").click()
+            page.reload()
+            expect(page.locator("#cat-motion-toggle")).to_have_attribute("aria-pressed", "true")
+            page.evaluate('setCatState("chewing")')
+            expect(page.locator("#cat-scene")).to_have_attribute("data-ready", "true")
+            expect(page.locator(".cat-chew-open")).to_have_css("animation-name", "cat-chew-open")
+            context.close()
