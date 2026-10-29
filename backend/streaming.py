@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from hashlib import sha256
 import os
 from pathlib import Path
 import sys
@@ -9,6 +10,10 @@ from fastapi.responses import StreamingResponse
 
 from .downloader import MediaError
 from .jobs import stop_process
+from .video_cache import VideoStartupCache, MemoryPreview, complete_small_mp4
+
+startup_cache = VideoStartupCache()
+STARTUP_BUFFER_SECONDS = 0.75
 
 
 class PreviewStream:
@@ -17,9 +22,14 @@ class PreviewStream:
         self.closed = False
         self.timer = None
         self.cleanup_task = None
+        self.prefix = b""
 
     @classmethod
     async def open(cls, descriptor, range_header, semaphore):
+        key = sha256(json.dumps(descriptor, sort_keys=True).encode()).digest()
+        cached = startup_cache.get(key)
+        if cached is not None:
+            return MemoryPreview(cached, range_header, descriptor["media_type"])
         try:
             await asyncio.wait_for(semaphore.acquire(), timeout=20)
         except TimeoutError:
@@ -50,8 +60,30 @@ class PreviewStream:
                 raise MediaError(header["error"]["code"], header["error"]["message"])
             lease.header = header
             lease.timer = asyncio.create_task(lease.expire())
+            if complete_small_mp4(header, range_header):
+                length = int(header["headers"]["Content-Length"])
+                buffered = bytearray()
+                try:
+                    # Chrome may probe the tail even for faststart MP4s. Give a
+                    # small original file a brief chance to finish, then serve
+                    # all subsequent ranges from RAM without extra CDN trips.
+                    async with asyncio.timeout(STARTUP_BUFFER_SECONDS):
+                        while len(buffered) < length:
+                            chunk = await process.stdout.read(min(65536, length - len(buffered)))
+                            if not chunk:
+                                raise MediaError(
+                                    "preview_unavailable", "เปิดตัวอย่างคลิปไม่ได้ กรุณาลองใหม่"
+                                )
+                            buffered.extend(chunk)
+                except TimeoutError:
+                    lease.prefix = bytes(buffered)  # Slow source: replay bytes and stream normally.
+                else:
+                    data = bytes(buffered)
+                    await lease.close()
+                    startup_cache.put(key, data)
+                    return MemoryPreview(data, range_header, descriptor["media_type"])
             return lease
-        except (ValueError, TimeoutError, ConnectionError):
+        except (ValueError, TimeoutError, ConnectionError, asyncio.IncompleteReadError):
             await lease.close()
             raise MediaError("preview_unavailable", "เปิดตัวอย่างคลิปไม่ได้ กรุณาลองใหม่") from None
         except BaseException:
@@ -79,6 +111,10 @@ class PreviewStream:
     async def chunks(self):
         try:
             remaining = int(self.header["headers"]["Content-Length"])
+            if self.prefix:
+                remaining -= len(self.prefix)
+                yield self.prefix
+                self.prefix = b""
             while remaining > 0:
                 chunk = await asyncio.wait_for(
                     self.process.stdout.read(min(65536, remaining)), timeout=25

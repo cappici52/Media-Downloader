@@ -19,7 +19,7 @@ from .downloader import MediaError
 from .jobs import JobManager, run_worker
 from .settings import settings
 from .validators import URLValidationError, validate_url
-from .streaming import PreviewStream, PreviewResponse
+from .streaming import PreviewStream, PreviewResponse, startup_cache
 from .browser_session import browser_session
 from .thumbnails import ThumbnailCache
 
@@ -57,6 +57,7 @@ async def lifespan(app):
         thumbnail_cache = None
         await manager.close()
         previews.clear()
+        startup_cache.clear()
         browser_session.clear()
 
 

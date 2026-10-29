@@ -56,7 +56,7 @@ If a server is already running without Chrome enabled, stop it first. The launch
 
 MKV preserves original codecs. MP4/MOV may require codec conversion, which takes longer and can introduce loss. Preview quality follows source selection; split audio/video may need a temporary MP4 before playback. Browser codec support still matters.
 
-Returning to a profile reuses loaded images and selections. Recently opened posts stay in memory for up to five minutes. Thumbnail requests have a separate two-worker pool and a shared RAM cache (32 MB, 256 entries, up to five minutes); identical requests share one fetch.
+Returning to a profile reuses loaded images and selections. Recently opened posts stay in memory for up to five minutes. Thumbnail requests have a separate two-worker pool and a shared RAM cache (32 MB, 256 entries, up to five minutes); identical requests share one fetch. Small MP4s can use a separate 32 MB RAM cache to avoid repeated startup range trips. Buffering gets at most 750 ms before falling back to streaming; original bytes and quality are preserved.
 
 Files expire after one hour by default. Restarting clears job history and managed temporary folders. Save finished files before they expire, and keep personal files outside `DOWNLOAD_DIR`.
 
