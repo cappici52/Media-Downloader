@@ -110,3 +110,45 @@ class CatAnimationTests(unittest.TestCase):
             self.assertNotIn("spitting", page.evaluate("catStates"))
             self.assertEqual(errors, [])
             browser.close()
+
+    def test_reopening_chrome_and_svg_decode_rejection_still_animates(self):
+        from playwright.sync_api import sync_playwright, expect
+
+        with tempfile.TemporaryDirectory() as profile, sync_playwright() as playwright:
+            for decode_mode in ("reject", "pending"):
+                context = playwright.chromium.launch_persistent_context(
+                    profile, headless=True, channel="chrome", reduced_motion="no-preference"
+                )
+                page = context.pages[0]
+                # Chrome may reject decode() for an otherwise loaded SVG fragment.
+                if decode_mode == "reject":
+                    page.add_init_script(
+                        "HTMLImageElement.prototype.decode = function() { return Promise.reject(new DOMException('SVG decode rejected', 'EncodingError')); }"
+                    )
+                else:
+                    page.add_init_script(
+                        "HTMLImageElement.prototype.decode = function() { return new Promise(() => {}); }"
+                    )
+                pending = []
+                page.route("**/info", lambda route: pending.append(route))
+                page.goto(os.environ["MEDIA_UI_URL"], wait_until="domcontentloaded")
+                page.locator("#url").fill("https://youtube.com/watch?v=fixture")
+                page.locator("#inspect").click()
+                expect(page.locator("#cat-scene")).to_have_attribute(
+                    "data-ready", "true", timeout=8000
+                )
+                expect(page.locator(".cat-chew-open")).to_have_css(
+                    "animation-name", "cat-chew-open"
+                )
+                pending.pop(0).fulfill(
+                    json={
+                        "type": "image",
+                        "title": "fixture",
+                        "thumbnail": None,
+                        "items": [
+                            {"id": "image-0", "type": "image", "thumbnail": None, "qualities": []}
+                        ],
+                    }
+                )
+                expect(page.locator("#media-picker")).to_be_visible()
+                context.close()

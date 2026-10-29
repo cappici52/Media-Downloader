@@ -114,7 +114,11 @@ Inspection animation follows real request state: idle → chewing while `/info`
 is pending → spitting for 620ms after a successful non-empty result → media picker.
 `cat-chewing.png` contains two generated, aligned mouth frames from the same cat.
 The self-contained `cat.svg` exposes closed/open SVG views; CSS alternates two
-predecoded images every 220ms. A fixed 184×120px scene (160×104 mobile) reserves
+prepared images every 220ms. Frames prepare on page load; native SVG decode
+errors or a decode taking over 200ms fall back to successful load/natural dimensions.
+A cold/returning Chrome session cannot permanently suppress an otherwise loaded
+sprite. The minimum chewing beat begins when frames become visible, and waiting
+for animation readiness never holds a successful result for more than 800ms. A fixed 184×120px scene (160×104 mobile) reserves
 layout. Failed frame decoding retains the original cat. Success returns the
 original open-mouth/media sprite and briefly emits code-native pixel media tiles.
 Error, URL edits and cancellation reset to idle; stale requests cannot emit tiles

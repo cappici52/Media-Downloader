@@ -8,6 +8,26 @@ const numbers = new Intl.NumberFormat("th-TH", { maximumFractionDigits: 0 });
 const picker = $("media-picker");
 let pickerTrigger = null, viewerTrigger = null, viewerRevision = 0;
 
+function prepareCatFrame(image) {
+  return new Promise(resolve => {
+    const loaded = async () => {
+      image.removeEventListener("load", loaded); image.removeEventListener("error", loaded);
+      if (image.naturalWidth > 0) {
+        let timer;
+        try {
+          await Promise.race([image.decode(), new Promise(done => { timer = setTimeout(done, 200); })]);
+        } catch { /* Loaded SVG views can render even when Chrome rejects decode(). */ }
+        finally { clearTimeout(timer); }
+      }
+      resolve(image.complete && image.naturalWidth > 0);
+    };
+    if (image.complete) loaded();
+    else { image.addEventListener("load", loaded, { once: true }); image.addEventListener("error", loaded, { once: true }); }
+  });
+}
+const catFramesReady = Promise.all([...$("cat-scene").querySelectorAll(".cat-chew")].map(prepareCatFrame))
+  .then(frames => frames.every(Boolean));
+
 let catStartedAt = 0;
 function setCatState(state) {
   const scene = $("cat-scene");
@@ -15,8 +35,13 @@ function setCatState(state) {
   delete scene.dataset.ready;
   if (state === "chewing") {
     catStartedAt = performance.now();
-    Promise.all([...scene.querySelectorAll(".cat-chew")].map(image => image.decode()))
-      .then(() => { if (scene.dataset.state === "chewing") scene.dataset.ready = "true"; })
+    catFramesReady
+      .then(ready => {
+        if (ready && scene.dataset.state === "chewing") {
+          scene.dataset.ready = "true";
+          catStartedAt = performance.now();
+        }
+      })
       .catch(() => { /* Keep the original cat visible if an animation asset fails. */ });
   }
 }
@@ -30,6 +55,8 @@ function waitForCat(milliseconds, signal) {
 }
 async function finishCat(signal) {
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { setCatState("idle"); return; }
+  await Promise.race([catFramesReady, waitForCat(800, signal)]);
+  if (signal.aborted) throw new DOMException("Aborted", "AbortError");
   await waitForCat(Math.max(0, 280 - (performance.now() - catStartedAt)), signal);
   setCatState("spitting");
   MediaI18n.text($("empty-title"), "พบสื่อแล้ว กำลังจัดให้คุณ…");
