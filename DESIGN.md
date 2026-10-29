@@ -92,13 +92,13 @@ Native checkbox and select geometry is explicitly accepted, including OS popup s
 Buttons use solid primary or neutral outline, at least 48px high, stable busy width,
 visible focus and disabled semantics. Labels, inputs and help own the URL form.
 Media checkboxes and the select-all checkbox own selection; the latter has an
-indeterminate state. Native select owns quality choice and its popup.
+indeterminate state. Videos show highest-source-quality text; an optional audio-only checkbox owns MP3 output.
 One inline alert owns errors; the job status live region owns asynchronous feedback.
 The native HTML dialog owns the media picker: showModal makes the background
 inert and traps focus. Escape, backdrop, Close and Done dismiss it and restore
 focus to the opener. `--z-dialog` owns its layer. Closing stops playback and
 releases the stream. Thumbnail buttons expand/play; checkboxes alone change
-selection. Native selects own quality; native video controls own playback.
+selection. Native audio-only checkboxes own MP3 output; native video controls own playback.
 Global CSS owns scrollbar behavior. No toast system is necessary.
 The canonical `frontend/cat.svg` owns the header logo, empty state and favicon.
 The viewer-left eye is blue, viewer-right gold; open mouth releases photo/video
@@ -114,8 +114,8 @@ No decorative animation; reduced motion disables any future transitions.
 `frontend/i18n.js` owns Thai/English UI copy, dynamic counters/status templates,
 accessible labels, placeholders and document title. Static leaf copy is marked
 `data-i18n`; runtime copy binds canonical Thai sources to existing text/attribute
-nodes. Switching updates those bindings without re-rendering checkboxes, quality
-selects or video elements. Selection, progress, playback and keyboard focus survive.
+nodes. Switching updates those bindings without re-rendering checkboxes, audio-only
+options or video elements. Selection, progress, playback and keyboard focus survive.
 Unknown Thai backend messages get a readable English access/retry fallback; known
 backend messages use specific translations. Source titles and captions are never
 translated. Header and modal each expose a language switch, because the header is
@@ -135,8 +135,8 @@ blocked or the preference is invalid.
 The existing URL form and `renderMedia` picker own profile discovery. Profile cards
 reuse preview buttons, checkboxes, focus rings and the dark grid. Each card shows
 a cover, caption and media count. Opening a cover inspects the individual post;
-return restores selected posts and focus. Native quality selects remain canonical
-for individual posts. Profile ZIP downloads prefer video up to 720p.
+return restores selected posts and focus. Individual videos and profile ZIPs choose the highest available original stream
+automatically. No resolution selector is shown. MP3 remains an explicit audio-only option.
 
 Pagination uses Load more or Read all posts, with Stop. Partial results and
 selections survive errors and retries. A new URL cancels requests and stale
@@ -145,7 +145,7 @@ Read all is bounded to 1,000 posts/100 pages. Aggregate media and byte limits
 still apply per download. Existing alerts, progress and job recovery stay shared.
 
 TikTok single video/photo posts reuse the same URL form, media picker, native
-quality control, preview and download states. Slideshow soundtracks are omitted
+highest-source-quality selection, preview and download states. Slideshow soundtracks are omitted
 from video selections. Unsupported LIVE links receive a Thai error. TikTok profiles reuse the canonical
 profile grid, pagination, selection restoration and bulk ZIP flow. Platform names
 come from profile metadata; completion copy remains platform-neutral.
@@ -153,3 +153,8 @@ come from profile metadata; completion copy remains platform-neutral.
 Read-only inspection retries a busy worker slot for up to 20 seconds when profile
 thumbnails occupy the shared pool. Abort and stale-response protections remain
 active. Download creation never retries automatically.
+
+Video duration is unlimited by default (`MAX_DURATION_SECONDS=0`). The limits row
+announces this separately from per-job byte/item/TTL limits, in both locales.
+Highest quality means the highest available supported source stream, not upscaling
+or recovering the pre-upload file. Video is remuxed without re-encoding.

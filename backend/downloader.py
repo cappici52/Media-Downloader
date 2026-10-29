@@ -1126,7 +1126,8 @@ def select_video_formats(formats, quality="best"):
     candidates = [
         f
         for f in formats
-        if f.get("vcodec") not in (None, "none")
+        if f.get("vcodec") != "none"
+        and (f.get("height") or f.get("vcodec"))
         and (quality == "best" or (f.get("height") and f["height"] <= int(quality[:-1])))
     ]
     if not candidates:

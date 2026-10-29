@@ -41,6 +41,11 @@ class BestQualityTests(unittest.TestCase):
         self.assertEqual(len(select_video_formats(formats)), 1)
         self.assertEqual(select_video_formats(formats, "360p")[0]["height"], 360)
 
+    def test_video_with_known_resolution_and_unspecified_codec_remains_supported(self):
+        source = fmt(1080)
+        source.pop("vcodec")
+        self.assertEqual(select_video_formats([source]), [source])
+
     def test_audio_only_and_missing_video(self):
         audio = fmt(0, vcodec="none", acodec="aac", abr=192)
         self.assertEqual(select_video_formats([audio], "mp3"), [audio])

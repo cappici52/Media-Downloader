@@ -143,7 +143,7 @@ function renderMedia(result, preserve = false) {
   if (!preserve) MediaI18n.text($("profile-error"), "");
   MediaI18n.text($("picker-title"), isProfile ? "เลือกโพสต์ที่จะบันทึก" : "เลือกสื่อที่จะบันทึก");
   MediaI18n.text($("picker-help"), isProfile ? "กดภาพปกเพื่อดูสื่อในโพสต์ เลือกหลายโพสต์เพื่อรวมเป็น ZIP" : "กดที่รูปเพื่อขยาย หรือกดที่คลิปเพื่อเล่นตัวอย่าง");
-  MediaI18n.text($("download-note"), isProfile ? "ดาวน์โหลดทุกสื่อในโพสต์ที่เลือกเป็น ZIP · คลิปเลือกคุณภาพไม่เกิน 720p เมื่อมีให้เลือก · ขีดจำกัดนับรวมทุกสื่อ" : "เลือกได้ทั้งวิดีโอและรูปภาพ หลายรายการจะรวมเป็นไฟล์ ZIP");
+  MediaI18n.text($("download-note"), isProfile ? "ดาวน์โหลดทุกสื่อในโพสต์ที่เลือกเป็น ZIP · วิดีโอคุณภาพสูงสุดจากต้นทาง" : "เลือกได้ทั้งวิดีโอและรูปภาพ หลายรายการจะรวมเป็นไฟล์ ZIP");
   if (isProfile) MediaI18n.text($("profile-status"), `อ่านแล้ว ${numbers.format(result.items.length)} โพสต์${result.next_cursor ? " · ยังมีโพสต์เพิ่มเติม" : " · อ่านครบตามที่แพลตฟอร์มส่งมาแล้ว"}`);
   $("empty-state").hidden = true;
   $("media-content").hidden = false;
@@ -187,21 +187,21 @@ function renderMedia(result, preserve = false) {
       const detail = document.createElement("p"); detail.className = "post-detail"; MediaI18n.text(detail, `${numbers.format(item.media_count)} สื่อ${item.has_video ? " · มีวิดีโอ" : " · รูปภาพ"}`); row.append(detail);
     }
     if (item.type === "video") {
-      const qualityLabel = document.createElement("label"); qualityLabel.className = "quality-control";
-      const select = document.createElement("select"); select.dataset.quality = item.id;
-      MediaI18n.attr(select, "aria-label", `คุณภาพวิดีโอ ${index + 1}`);
-      item.qualities.forEach((quality) => {
-        const option = document.createElement("option"); option.value = quality.id; MediaI18n.text(option, quality.id === "mp3" ? "MP3" : quality.label); select.append(option);
-      });
-      const preferred = item.qualities.find((q) => q.id === "720p") || item.qualities.find((q) => q.id !== "mp3") || item.qualities[0];
-      if (preferred) select.value = preferred.id;
-      qualityLabel.append(select); row.append(qualityLabel);
+      const note = document.createElement("p"); note.className = "quality-note";
+      MediaI18n.text(note, "คุณภาพสูงสุดจากต้นทาง"); row.append(note);
+      if (item.qualities.some((quality) => quality.id === "mp3")) {
+        const audioLabel = document.createElement("label"); audioLabel.className = "audio-choice";
+        const audio = document.createElement("input"); audio.type = "checkbox"; audio.dataset.audio = item.id;
+        audio.addEventListener("change", () => MediaI18n.text(note, audio.checked ? "เสียง MP3 · 192 kbps" : "คุณภาพสูงสุดจากต้นทาง"));
+        audioLabel.append(audio, MediaI18n.label("เสียงอย่างเดียว MP3")); row.append(audioLabel);
+      }
     }
     $("media-list").append(row);
   });
   if (result.limits) {
     const limits = result.limits;
-    MediaI18n.text($("limits"), `สูงสุด ${numbers.format(limits.max_file_mb)} MB ต่องาน · วิดีโอไม่เกิน ${numbers.format(limits.max_duration_seconds / 60)} นาที · ไม่เกิน ${numbers.format(limits.max_items)} รายการ · ไฟล์เก็บไว้ ${numbers.format(limits.ttl_seconds / 60)} นาที`);
+    const duration = limits.max_duration_seconds ? `วิดีโอไม่เกิน ${numbers.format(limits.max_duration_seconds / 60)} นาที` : "ความยาววิดีโอไม่จำกัด";
+    MediaI18n.text($("limits"), `สูงสุด ${numbers.format(limits.max_file_mb)} MB ต่องาน · ${duration} · ไม่เกิน ${numbers.format(limits.max_items)} รายการ · ไฟล์เก็บไว้ ${numbers.format(limits.ttl_seconds / 60)} นาที`);
   }
   MediaI18n.prune();
   step(1); selectionState();
@@ -377,7 +377,7 @@ downloadButton.addEventListener("click", async () => {
   if (!media || activeJob || submitting || profileLoading) return;
   const selections = media.items.filter((item) => selected.get(item.id)).map((item) => {
     const value = { id: item.id };
-    if (item.type === "video") value.quality = [...document.querySelectorAll("[data-quality]")].find((node) => node.dataset.quality === item.id).value;
+    if (item.type === "video") value.quality = [...document.querySelectorAll("[data-audio]")].find((node) => node.dataset.audio === item.id)?.checked ? "mp3" : "best";
     return value;
   });
   if (!selections.length) { error("กรุณาเลือกอย่างน้อยหนึ่งรายการ"); return; }

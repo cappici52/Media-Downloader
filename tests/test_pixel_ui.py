@@ -33,7 +33,7 @@ class PixelUITests(unittest.TestCase):
             job_id = "a" * 32
             limits = {
                 "max_file_mb": 500,
-                "max_duration_seconds": 1800,
+                "max_duration_seconds": 0,
                 "max_items": 100,
                 "ttl_seconds": 3600,
             }
@@ -169,7 +169,7 @@ class PixelUITests(unittest.TestCase):
             self.assertNotIn(
                 "The request could not be completed", page.locator("body").inner_text()
             )
-            self.assertIn("Files kept for 60 min", page.locator("#limits").inner_text())
+            self.assertIn("No video duration limit", page.locator("#limits").inner_text())
             page.reload()
             expect(page.locator("#inspect")).to_have_text("Check link")
             page.locator("#url").fill("https://youtube.com/watch?v=fixture")
@@ -191,7 +191,7 @@ class PixelUITests(unittest.TestCase):
             page.locator("#select-all").uncheck()
             page.locator("[data-item]").nth(0).check()
             page.locator("[data-item]").nth(1).check()
-            page.locator("[data-quality]").select_option("360p")
+            page.locator("[data-audio]").check()
             expect(page.locator("#picker-count")).to_have_text("Selected 2 / 8 items")
             page.screenshot(path=str(output / "pixel-ui-picker-en.png"))
             page.locator(".tile-preview").nth(1).click()
@@ -205,21 +205,19 @@ class PixelUITests(unittest.TestCase):
             page.locator(".picker-header [data-language-toggle]").click()
             expect(page.locator("#picker-title")).to_have_text("เลือกสื่อที่จะบันทึก")
             self.assertEqual(page.locator("#viewer-video").get_attribute("src"), source)
-            self.assertEqual(page.locator("[data-quality]").input_value(), "360p")
+            self.assertTrue(page.locator("[data-audio]").is_checked())
             expect(page.locator("[data-item]:checked")).to_have_count(2)
             page.locator("#close-viewer").click()
             page.locator(".picker-header [data-language-toggle]").click()
-            page.locator("[data-quality]").focus()
-            page.keyboard.press("ArrowDown")
-            page.keyboard.press("Enter")
-            page.locator("[data-quality]").select_option("360p")
+            expect(page.locator("[data-quality]")).to_have_count(0)
+            page.locator("[data-audio]").uncheck()
             page.locator("#close-picker").click()
             page.locator("#download").click()
             page.locator(".brand [data-language-toggle]").click()
             expect(page.locator("#file-link")).to_be_visible(timeout=15000)
             self.assertEqual(
                 submitted[0]["selections"],
-                [{"id": "image-0"}, {"id": "video-0", "quality": "360p"}],
+                [{"id": "image-0"}, {"id": "video-0", "quality": "best"}],
             )
             page.locator("#url").fill("https://www.tiktok.com/@fixture")
             page.locator("#inspect").click()

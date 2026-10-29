@@ -2,6 +2,10 @@
 // UI copy uses canonical Thai sources. Only language preference is stored.
 window.MediaI18n = (() => {
   const dictionary = {
+  "เสียง MP3 · 192 kbps": "MP3 audio · 192 kbps",
+  "คุณภาพสูงสุดจากต้นทาง": "Highest available quality",
+  "เสียงอย่างเดียว MP3": "Audio only (MP3)",
+  "ดาวน์โหลดทุกสื่อในโพสต์ที่เลือกเป็น ZIP · วิดีโอคุณภาพสูงสุดจากต้นทาง": "Save all media in selected posts as a ZIP · Highest available video quality",
   "บันทึกวิดีโอและรูปภาพจากลิงก์": "Save videos and images from a link",
   "วางลิงก์": "Paste link",
   "เลือกสื่อ": "Select media",
@@ -29,7 +33,6 @@ window.MediaI18n = (() => {
   "เลือกโพสต์ที่จะบันทึก": "Select posts to save",
   "กดที่รูปเพื่อขยาย หรือกดที่คลิปเพื่อเล่นตัวอย่าง": "Open an image to enlarge it, or a video to play a preview.",
   "กดภาพปกเพื่อดูสื่อในโพสต์ เลือกหลายโพสต์เพื่อรวมเป็น ZIP": "Open a cover to preview its post. Select multiple posts to save a ZIP.",
-  "ดาวน์โหลดทุกสื่อในโพสต์ที่เลือกเป็น ZIP · คลิปเลือกคุณภาพไม่เกิน 720p เมื่อมีให้เลือก · ขีดจำกัดนับรวมทุกสื่อ": "Save all media in selected posts as a ZIP. Video prefers up to 720p. Limits apply to all media.",
   "เลือกทั้งหมด": "Select all",
   "โหลดเพิ่ม": "Load more",
   "อ่านโพสต์ทั้งหมด": "Read all posts",
@@ -92,6 +95,7 @@ window.MediaI18n = (() => {
   let language = "th";
   try { if (localStorage.getItem("media-language") === "en") language = "en"; } catch { /* Optional storage. */ }
   const patterns = [
+    [/^สูงสุด ([\d,.]+) MB ต่องาน · ความยาววิดีโอไม่จำกัด · ไม่เกิน ([\d,.]+) รายการ · ไฟล์เก็บไว้ ([\d,.]+) นาที$/, (_, size, items, ttl) => `Up to ${size} MB/job · No video duration limit · ${items} items · Files kept for ${ttl} min`],
     [/^เลือก ([\d,]+) \/ ([\d,]+) (โพสต์|รายการ)(.*)$/, (_, a, b, kind, tail) => `Selected ${a} / ${b} ${kind === "โพสต์" ? "posts" : "items"}${translate(tail)}`],
     [/^ · รวม ([\d,]+) สื่อ(.*)$/, (_, n, tail) => ` · ${n} media${translate(tail)}`],
     [/^ · เกินขีดจำกัด กรุณาแบ่งเป็นชุด$/, () => " · Over the limit. Select a smaller batch."],
