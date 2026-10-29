@@ -162,3 +162,14 @@ class APITests(unittest.TestCase):
                 },
             )
         self.assertEqual(response.status_code, 400)
+
+
+class StaticPixelAssetTests(unittest.TestCase):
+    def test_pixel_assets_are_self_hosted_and_other_files_stay_blocked(self):
+        client = TestClient(main.app, base_url="http://localhost")
+        for filename in ("cat.svg", "pixel-font.ttf", "pixel-font-license.txt", "i18n.js"):
+            response = client.get("/assets/" + filename)
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("script-src 'self'", response.headers["content-security-policy"])
+        for filename in (".env", "main.py", "unknown.js"):
+            self.assertEqual(client.get("/assets/" + filename).status_code, 404)

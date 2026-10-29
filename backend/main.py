@@ -303,6 +303,13 @@ async def home():
 
 @app.get("/assets/{filename}")
 async def asset(filename: str):
-    if filename not in ("app.js", "styles.css"):
+    if filename not in (
+        "app.js",
+        "styles.css",
+        "i18n.js",
+        "cat.svg",
+        "pixel-font.ttf",
+        "pixel-font-license.txt",
+    ):
         return error_response("not_found", "ไม่พบไฟล์นี้", 404)
     return FileResponse(ROOT / "frontend" / filename)
