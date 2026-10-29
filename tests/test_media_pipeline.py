@@ -1,5 +1,6 @@
 from dataclasses import replace
 import io
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -108,11 +109,94 @@ class VideoPipelineTests(unittest.TestCase):
             timeout=20,
         )
 
-    def test_local_conversion_to_mp3_and_mkv(self):
-        for extension, audio in (("mp3", True), ("mkv", False)):
+    def test_local_conversion_preserves_video_in_all_containers(self):
+        for extension, audio in (("mp3", True), ("mkv", False), ("mp4", False), ("mov", False)):
             output = self.root / ("result." + extension)
             downloader.transcode([self.source], output, audio=audio)
             self.assertGreater(output.stat().st_size, 100)
+            if not audio:
+                stream = self.probe(output)["streams"][0]
+                self.assertEqual(
+                    (
+                        stream["codec_name"],
+                        stream["width"],
+                        stream["height"],
+                        stream["r_frame_rate"],
+                    ),
+                    ("mpeg4", 64, 64, "10/1"),
+                )
+                source_hash = self.video_hash(self.source)
+                self.assertEqual(self.video_hash(output), source_hash)
+
+    def probe(self, path):
+        return json.loads(
+            subprocess.check_output(
+                [
+                    shutil.which("ffprobe"),
+                    "-v",
+                    "error",
+                    "-show_streams",
+                    "-show_format",
+                    "-of",
+                    "json",
+                    str(path),
+                ],
+                timeout=20,
+            )
+        )
+
+    def video_hash(self, path):
+        return subprocess.check_output(
+            [
+                shutil.which("ffmpeg"),
+                "-v",
+                "error",
+                "-i",
+                str(path),
+                "-map",
+                "0:v:0",
+                "-c",
+                "copy",
+                "-f",
+                "hash",
+                "-hash",
+                "sha256",
+                "-",
+            ],
+            timeout=20,
+        )
+
+    def test_vp9_mov_fallback_keeps_dimensions_fps_and_audio(self):
+        source = self.root / "source.webm"
+        subprocess.run(
+            [
+                shutil.which("ffmpeg"),
+                "-v",
+                "error",
+                "-i",
+                str(self.source),
+                "-c:v",
+                "libvpx-vp9",
+                "-c:a",
+                "libopus",
+                str(source),
+            ],
+            check=True,
+            timeout=30,
+        )
+        for extension in ("mp4", "mov"):
+            output = self.root / ("vp9." + extension)
+            downloader.transcode([source], output)
+            info = self.probe(output)
+            stream = info["streams"][0]
+            self.assertEqual(
+                (stream["width"], stream["height"], stream["r_frame_rate"]), (64, 64, "10/1")
+            )
+            self.assertEqual(info["streams"][1]["codec_type"], "audio")
+            if extension == "mp4":
+                self.assertEqual(self.video_hash(output), self.video_hash(source))
+            else:
+                self.assertEqual(stream["codec_name"], "h264")
 
     def test_duration_limit_rejects_local_file(self):
         with patch.object(downloader, "settings", replace(downloader.settings, max_duration=1)):
@@ -151,7 +235,11 @@ class VideoPipelineTests(unittest.TestCase):
                 {"Content-Length": str(len(source)), "Content-Type": "video/mp4"},
             )
 
-        directory = self.root / "job"
+        for video_format in ("mkv", "mp4", "mov"):
+            self.check_mixed_output(video_format, public, videos, images, send)
+
+    def check_mixed_output(self, video_format, public, videos, images, send):
+        directory = self.root / video_format
         directory.mkdir()
         with (
             patch.object(downloader, "inspect_media", return_value=(public, videos, images)),
@@ -163,6 +251,7 @@ class VideoPipelineTests(unittest.TestCase):
                 [{"id": "video-0", "quality": "360p"}, {"id": "image-0"}],
                 directory,
                 lambda e: None,
+                video_format=video_format,
             )
         with zipfile.ZipFile(output) as archive:
-            self.assertEqual(archive.namelist(), ["media-001.mkv", "media-002.jpg"])
+            self.assertEqual(archive.namelist(), [f"media-001.{video_format}", "media-002.jpg"])

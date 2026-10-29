@@ -212,9 +212,13 @@ class PixelUITests(unittest.TestCase):
             expect(page.locator("[data-quality]")).to_have_count(0)
             page.locator("[data-audio]").uncheck()
             page.locator("#close-picker").click()
+            page.locator("#video-format").select_option("mp4")
             page.locator("#download").click()
+            expect(page.locator("#video-format")).to_be_disabled()
             page.locator(".brand [data-language-toggle]").click()
             expect(page.locator("#file-link")).to_be_visible(timeout=15000)
+            expect(page.locator("#video-format")).to_have_value("mp4")
+            self.assertEqual(submitted[0]["video_format"], "mp4")
             self.assertEqual(
                 submitted[0]["selections"],
                 [{"id": "image-0"}, {"id": "video-0", "quality": "best"}],

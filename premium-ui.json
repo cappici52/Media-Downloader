@@ -1,0 +1,11 @@
+{
+  "profile": "product-admin",
+  "sourceRoots": [
+    "frontend"
+  ],
+  "locale": "th-TH",
+  "canonicalMap": "DESIGN.md",
+  "ownership": {
+    "Select/Listbox": "native"
+  }
+}

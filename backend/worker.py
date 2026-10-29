@@ -31,7 +31,11 @@ def main():
         elif request["action"] == "download":
             result = {
                 "filename": download_media(
-                    request["url"], request["selections"], Path(request["directory"]), emit
+                    request["url"],
+                    request["selections"],
+                    Path(request["directory"]),
+                    emit,
+                    video_format=request.get("video_format", "mkv"),
                 ).name
             }
         elif request["action"] == "preview":

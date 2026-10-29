@@ -1097,23 +1097,80 @@ def transcode(inputs, output, audio=False):
     args = [executable, "-nostdin", "-v", "error", "-y"]
     for path in inputs:
         args += ["-protocol_whitelist", "file,pipe", "-i", str(path.resolve())]
-    args += (
-        ["-vn", "-codec:a", "libmp3lame", "-b:a", "192k"]
-        if audio
-        else ["-map", "0:v:0", "-map", "1:a:0" if len(inputs) > 1 else "0:a:0?", "-c", "copy"]
+    mapping = ["-map", "0:v:0", "-map", "1:a:0" if len(inputs) > 1 else "0:a:0?"]
+    modes = (
+        [["-vn", "-codec:a", "libmp3lame", "-b:a", "192k"]] if audio else [mapping + ["-c", "copy"]]
     )
-    args += ["-fs", str(max(1, settings.max_bytes // 2)), str(output.resolve())]
-    # Output cap is conservative; intermediates and final output share the quota.
+    container = output.suffix.lower()
+    if not audio and container in (".mp4", ".mov"):
+        # Keep original video packets if only the audio codec is incompatible.
+        modes.append(mapping + ["-c:v", "copy", "-c:a", "aac", "-b:a", "192k"])
+    for mode in modes:
+        result = run_mux(args, mode, output, faststart=container in (".mp4", ".mov"))
+        if result.returncode == 0:
+            return
+        output.unlink(missing_ok=True)
+    if not audio and container in (".mp4", ".mov"):
+        # Codec conversion is a last resort; never resize or reduce the frame rate.
+        encoders = subprocess.run(
+            [executable, "-hide_banner", "-encoders"], capture_output=True, timeout=30, shell=False
+        ).stdout.decode("utf-8", errors="replace")
+        if re.search(r"\blibx264\b", encoders):
+            video = ["-c:v", "libx264", "-preset", "medium", "-crf", "18"]
+        elif re.search(r"\blibopenh264\b", encoders):
+            metadata = subprocess.run(
+                [
+                    probe,
+                    "-v",
+                    "error",
+                    "-protocol_whitelist",
+                    "file,pipe",
+                    "-show_entries",
+                    "format=bit_rate",
+                    "-of",
+                    "json",
+                    str(inputs[0].resolve()),
+                ],
+                capture_output=True,
+                timeout=30,
+                shell=False,
+            )
+            try:
+                bitrate = int(json.loads(metadata.stdout)["format"]["bit_rate"])
+            except (ValueError, KeyError, TypeError):
+                bitrate = 0
+            video = ["-c:v", "libopenh264", "-b:v", str(max(8_000_000, bitrate * 2))]
+        else:
+            raise MediaError(
+                "conversion_failed",
+                "codec ของคลิปนี้ต้องแปลงภาพ กรุณาติดตั้ง ffmpeg ที่มี libx264 หรือเลือก MKV",
+            )
+        result = run_mux(
+            args,
+            mapping + video + ["-fps_mode", "passthrough", "-c:a", "aac", "-b:a", "192k"],
+            output,
+            faststart=True,
+        )
+        if result.returncode == 0:
+            return
+        output.unlink(missing_ok=True)
+    raise MediaError("conversion_failed", "สร้างไฟล์รูปแบบที่เลือกไม่สำเร็จ ลองเลือก MKV เพื่อเก็บ codec เดิม")
+
+
+def run_mux(inputs, mode, output, *, faststart=False):
+    cap = max(1, settings.max_bytes // 2)
+    args = inputs + mode + (["-movflags", "+faststart"] if faststart else [])
+    args += ["-fs", str(cap), str(output.resolve())]
     result = subprocess.run(args, capture_output=True, timeout=settings.timeout, shell=False)
-    if result.returncode:
-        raise MediaError("conversion_failed", "แปลงไฟล์ไม่สำเร็จ รูปแบบสื่ออาจไม่รองรับ")
-    if output.stat().st_size >= settings.max_bytes // 2:
+    # Intermediates and final output share the quota. Never deliver a capped/truncated file.
+    if output.exists() and output.stat().st_size >= cap:
         output.unlink(missing_ok=True)
         raise MediaError("size_limit", "ไฟล์ที่แปลงมีขนาดเกินที่กำหนด")
+    return result
 
 
 def select_video_formats(formats, quality="best"):
-    """Choose original streams; ffmpeg remuxes them without resizing/re-encoding."""
+    """Choose the highest available original streams before output packaging."""
     formats = [f for f in formats if allowed_format(f)]
     audios = [
         f for f in formats if f.get("vcodec") == "none" and f.get("acodec") not in (None, "none")
@@ -1148,14 +1205,16 @@ def select_video_formats(formats, quality="best"):
     return chosen
 
 
-def download_media(url, selections, directory, emit, *, inspected=None):
+def download_media(url, selections, directory, emit, *, inspected=None, video_format="mkv"):
     import requests
     from .profiles import instagram_profile, download_profile
     from .tiktok_profiles import tiktok_profile
 
+    if video_format not in ("mkv", "mp4", "mov"):
+        raise MediaError("selection", "รูปแบบวิดีโอไม่รองรับ กรุณาเลือก MKV, MP4 หรือ MOV")
     if instagram_profile(url) or tiktok_profile(url):
         checked = validate_url(url)
-        return download_profile(checked.url, selections, directory, emit)
+        return download_profile(checked.url, selections, directory, emit, video_format=video_format)
     public, videos, images = inspected if inspected is not None else inspect_media(url)
     available = {item["id"]: item for item in public["items"]}
     if (
@@ -1233,7 +1292,7 @@ def download_media(url, selections, directory, emit, *, inspected=None):
                     raise MediaError("download_failed", "ดาวน์โหลดไฟล์ไม่สำเร็จหรือไฟล์ใหญ่เกินกำหนด")
                 paths.append(path)
                 check_size(directory)
-            target = base.with_suffix(".mp3" if audio_only else ".mkv")
+            target = base.with_suffix(".mp3" if audio_only else "." + video_format)
             emit(
                 {
                     "event": "progress",

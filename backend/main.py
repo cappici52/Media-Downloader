@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import time
 from uuid import uuid4
+from typing import Literal
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -130,6 +131,7 @@ class Selection(BaseModel):
 
 
 class DownloadRequest(InfoRequest):
+    video_format: Literal["mkv", "mp4", "mov"] = "mkv"
     selections: list[Selection] = Field(min_length=1, max_length=settings.max_items)
 
 
@@ -208,7 +210,7 @@ async def download(payload: DownloadRequest):
     selections = [selection.model_dump(exclude_none=True) for selection in payload.selections]
     if len({selection["id"] for selection in selections}) != len(selections):
         raise MediaError("selection", "กรุณาเลือกรายการสื่อโดยไม่เลือกซ้ำ")
-    job = await manager.submit(url, selections)
+    job = await manager.submit(url, selections, video_format=payload.video_format)
     return {"job_id": job.id, "status_url": f"/jobs/{job.id}"}
 
 

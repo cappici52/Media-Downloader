@@ -268,3 +268,7 @@ html[data-paw-cursor="on"], html[data-paw-cursor="on"] * { cursor: none !importa
 html[data-cat-motion="on"] #paw-cursor[data-kind="busy"] .paw-rotor { animation: paw-spin 900ms steps(8, end) infinite !important; }
 @keyframes paw-spin { to { transform: rotate(360deg); } }
 @media (forced-colors: active) { html, body, body * { cursor: auto !important; } #paw-cursor { display: none; } }
+
+.output-options { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-top: 24px; }
+.output-options label { font-weight: 700; }
+.output-options .help { flex-basis: 100%; margin: 0; }

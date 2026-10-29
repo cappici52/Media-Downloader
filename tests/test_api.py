@@ -58,6 +58,35 @@ class APITests(unittest.TestCase):
         for body in ({}, {"url": "https://youtube.com", "cookies": "secret"}, {"url": 42}):
             self.assertEqual(self.client.post("/info", json=body).status_code, 422)
 
+    def test_output_format_validation_and_queue_propagation(self):
+        from types import SimpleNamespace
+
+        for container in ("mkv", "mp4", "mov"):
+            submit = AsyncMock(return_value=SimpleNamespace(id="fixture"))
+            with self.valid_dns(), patch.object(self.manager, "submit", submit):
+                response = self.client.post(
+                    "/download",
+                    json={
+                        "url": "https://youtube.com",
+                        "selections": [{"id": "video-0", "quality": "best"}],
+                        "video_format": container,
+                    },
+                )
+            self.assertEqual(response.status_code, 202)
+            self.assertEqual(submit.await_args.kwargs["video_format"], container)
+        for container in ("avi", "../bad", "MP4", None):
+            self.assertEqual(
+                self.client.post(
+                    "/download",
+                    json={
+                        "url": "https://youtube.com",
+                        "selections": [{"id": "video-0"}],
+                        "video_format": container,
+                    },
+                ).status_code,
+                422,
+            )
+
     def test_private_origin_host_and_body_policy(self):
         self.assertEqual(
             self.client.post(

@@ -332,6 +332,7 @@ class ProfileTests(unittest.TestCase):
 
             def download(url, choices, folder, emit, **kwargs):
                 self.assertEqual(choices, [{"id": "video-0", "quality": "best"}])
+                self.assertEqual(kwargs["video_format"], "mov")
                 path = folder / "media.mkv"
                 path.write_bytes(b"fixture")
                 return path
@@ -340,4 +341,6 @@ class ProfileTests(unittest.TestCase):
                 patch.object(downloader, "inspect_media", return_value=inspection),
                 patch.object(downloader, "download_media", side_effect=download),
             ):
-                profiles.download_profile(URL, [{"id": "post-Fixture1"}], Path(temp), Mock())
+                profiles.download_profile(
+                    URL, [{"id": "post-Fixture1"}], Path(temp), Mock(), video_format="mov"
+                )

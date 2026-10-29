@@ -2,6 +2,12 @@
 // UI copy uses canonical Thai sources. Only language preference is stored.
 window.MediaI18n = (() => {
   const dictionary = {
+  "รูปแบบไฟล์วิดีโอ": "Video file format",
+  "MKV · เก็บ codec เดิม": "MKV · Original codecs",
+  "คงความละเอียดและเฟรมเรตเดิม · MP4/MOV อาจต้องแปลง codec และใช้เวลานานขึ้น": "Keep source resolution and frame rate · MP4/MOV may need codec conversion and take longer",
+  "รูปแบบวิดีโอไม่รองรับ กรุณาเลือก MKV, MP4 หรือ MOV": "Unsupported video format. Choose MKV, MP4 or MOV.",
+  "codec ของคลิปนี้ต้องแปลงภาพ กรุณาติดตั้ง ffmpeg ที่มี libx264 หรือเลือก MKV": "This codec needs conversion. Install ffmpeg with libx264 or choose MKV.",
+  "สร้างไฟล์รูปแบบที่เลือกไม่สำเร็จ ลองเลือก MKV เพื่อเก็บ codec เดิม": "Could not create the selected format. Try MKV to keep the original codecs.",
   "แอนิเมชัน: เปิด": "Animation: on",
   "แอนิเมชัน: ปิด": "Animation: off",
   "แมว: เคลื่อนไหว": "Cat: animated",

@@ -192,3 +192,11 @@ and touch behavior stay native. Fine-pointer/hover capability gates enhancement;
 blur, pointer leave, touch, context menus and document hiding restore native SVG
 paw fallback. Unsupported popovers retain that fallback. Forced colors uses the
 system cursor. Cursor data never leaves the page or enters persistent storage.
+
+Video output: the shared `#video-format` native select above Download offers MKV (original codecs, default), MP4, MOV. Hidden for image-only results, disabled while inspecting/loading/submitting/running. Selection survives locale changes and applies to all profile or mixed ZIP videos; MP3/images retain their own formats. Source resolution/FPS remain unchanged, with a visible note that MP4/MOV can require codec conversion. Label/help use MediaI18n; existing select tokens and keyboard behavior are canonical.
+
+## Canonical UI Map
+
+| Capability | Canonical owner | Source of truth | Allowed variants | Verification |
+| --- | --- | --- | --- | --- |
+| Select/Listbox | Native HTML select, shared #video-format | frontend/index.html, frontend/styles.css, MediaI18n | Browser-owned popup, dark app surface; MKV/MP4/MOV values | tests/test_pixel_ui.py: format submission and locale persistence |

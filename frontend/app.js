@@ -104,6 +104,8 @@ function selectionState() {
   MediaI18n.text($("picker-count"), MediaI18n.original($("selection-count")));
   $("select-all").checked = !!media && count === media.items.length;
   $("select-all").indeterminate = !!media && count > 0 && count < media.items.length;
+  $("output-options").hidden = !media || (media.type !== "profile" && !media.items.some((item) => item.type === "video"));
+  $("video-format").disabled = !!activeJob || submitting || !!inspection || !!profileLoading || !media;
   downloadButton.disabled = !count || !!activeJob || submitting || !!inspection || !!profileLoading || mediaCount > (media?.limits?.max_items || 100);
   $("open-picker").disabled = !media || !!activeJob || submitting || !!inspection;
   $("return-profile").hidden = !profileReturn;
@@ -469,7 +471,7 @@ downloadButton.addEventListener("click", async () => {
   $("file-link").hidden = true; $("retry-status").hidden = true;
   MediaI18n.text($("job-status"), "กำลังสร้างงาน…"); $("progress").removeAttribute("value");
   try {
-    const result = await api("/download", { method: "POST", body: JSON.stringify({ url: inspectedUrl, selections }) });
+    const result = await api("/download", { method: "POST", body: JSON.stringify({ url: inspectedUrl, selections, video_format: $("video-format").value }) });
     activeJob = result.job_id; rememberJob(activeJob); step(2); pollJob();
   } catch (issue) {
     error(issue.message + " หากการเชื่อมต่อขาด งานอาจถูกสร้างแล้ว กรุณาตรวจสอบก่อนลองใหม่");

@@ -19,6 +19,7 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
         async def fake(request, **kwargs):
             if request["url"] == "fail":
                 raise MediaError("private", "โพสต์เป็นส่วนตัว")
+            self.assertEqual(request["video_format"], "mov")
             kwargs["progress"]({"progress": 55, "phase": "downloading"})
             (Path(request["directory"]) / "media.jpg").write_bytes(b"image")
             return {"filename": "media.jpg"}
@@ -26,7 +27,7 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
         manager = JobManager(self.limits, fake)
         await manager.start()
         try:
-            job = await manager.submit("ok", [{"id": "image-0"}])
+            job = await manager.submit("ok", [{"id": "image-0"}], video_format="mov")
             await asyncio.wait_for(manager.queue.join(), 2)
             self.assertEqual(job.status, "completed")
             self.assertEqual(job.progress, 100)

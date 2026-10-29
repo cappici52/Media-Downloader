@@ -304,7 +304,7 @@ def inspect_profile(url, cursor=None):
     )
 
 
-def download_profile(url, selections, directory, emit):
+def download_profile(url, selections, directory, emit, *, video_format="mkv"):
     from .downloader import MediaError, inspect_media, download_media, check_size
 
     if (
@@ -367,7 +367,9 @@ def download_profile(url, selections, directory, emit):
                 )
                 check_size(directory)
 
-            path = download_media(post_url, choices, folder, progress, inspected=inspected)
+            path = download_media(
+                post_url, choices, folder, progress, inspected=inspected, video_format=video_format
+            )
             prefix = selection["id"] + "/"
             if path.suffix == ".zip":
                 with zipfile.ZipFile(path) as source:

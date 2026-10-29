@@ -6,9 +6,9 @@
   <meta name="color-scheme" content="dark">
   <title data-i18n>Media Downloader — ดาวน์โหลดวิดีโอและรูปภาพ</title>
   <link rel="icon" href="/assets/cat.svg?v=3" type="image/svg+xml">
-  <link rel="stylesheet" href="/assets/styles.css?v=6">
-  <script src="/assets/i18n.js" defer></script>
-  <script src="/assets/app.js?v=6" defer></script>
+  <link rel="stylesheet" href="/assets/styles.css?v=7">
+  <script src="/assets/i18n.js?v=7" defer></script>
+  <script src="/assets/app.js?v=7" defer></script>
 </head>
 <body>
   <main class="page">
@@ -62,6 +62,15 @@
         </div>
       </section>
 
+      <div class="output-options" id="output-options" hidden>
+        <label for="video-format" data-i18n>รูปแบบไฟล์วิดีโอ</label>
+        <select id="video-format" aria-describedby="format-help" disabled>
+          <option value="mkv" data-i18n>MKV · เก็บ codec เดิม</option>
+          <option value="mp4">MP4</option>
+          <option value="mov">MOV</option>
+        </select>
+        <p id="format-help" class="help" data-i18n>คงความละเอียดและเฟรมเรตเดิม · MP4/MOV อาจต้องแปลง codec และใช้เวลานานขึ้น</p>
+      </div>
       <button class="primary download-button" id="download" type="button" disabled data-i18n>ดาวน์โหลดที่เลือก</button>
       <div class="progress-panel" id="job-panel" aria-labelledby="job-status">
         <p id="job-status" role="status" aria-live="polite" data-i18n>ยังไม่มีงานดาวน์โหลด</p>

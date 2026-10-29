@@ -192,11 +192,22 @@ Invoke-RestMethod http://localhost:8000/info -Method Post -ContentType applicati
 โพสต์ผสมใช้ `type: carousel` โดยแต่ละ item มี `type: video` หรือ `image`
 รายการคุณภาพคืนตามต้นทางจริง thumbnail เป็น URL ภายในแอปที่หมดอายุได้
 
+วิดีโอเลือกไฟล์ MKV (ค่าเริ่มต้น), MP4 หรือ MOV ได้จากหน้าดาวน์โหลด
+ทุกแบบใช้สื่อความละเอียดและเฟรมเรตสูงสุดจากต้นทางก่อน ไม่ย่อภาพหรือปรับลด FPS
+ระบบพยายาม remux โดยไม่เข้ารหัสใหม่ หาก MP4/MOV ไม่รองรับ codec เดิม
+จะลองแปลงเฉพาะเสียงเป็น AAC ก่อน แล้วจึงแปลงภาพเป็น H.264 เมื่อจำเป็น
+การแปลง codec มีการสูญเสียได้และใช้เวลาเพิ่ม; MKV เก็บ codec ภาพ/เสียงเดิม
+การแปลงภาพใช้ libx264 CRF 18 หรือ libopenh264 bitrate อย่างน้อย 8 Mbps
+หาก ffmpeg ไม่มี encoder ที่รองรับ จะแสดง error ให้เลือก MKV แทน
+MP4 ที่เก็บ VP9/AV1 เดิมอาจเปิดไม่ได้ในโปรแกรมรุ่นเก่า ขึ้นกับ codec ที่โปรแกรมรองรับ
+ตัวเลือกนี้ใช้กับทุกวิดีโอใน ZIP รวมถึงดาวน์โหลดโปรไฟล์ รูปภาพและ MP3 ไม่เปลี่ยนรูปแบบ
+
 `POST /download` รับ:
 
 ```json
 {
   "url": "https://x.com/OWNER/status/POST_ID",
+  "video_format": "mp4",
   "selections": [
     {"id": "video-0", "quality": "best"},
     {"id": "image-0"}
