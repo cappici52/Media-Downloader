@@ -1,10 +1,12 @@
 from dataclasses import replace
 from pathlib import Path
 import tempfile
+import time
 import unittest
 from unittest.mock import patch, AsyncMock
 
 from fastapi.testclient import TestClient
+from backend.downloader import MediaError
 from backend import main
 from backend.jobs import JobManager
 from backend.settings import settings
@@ -162,6 +164,62 @@ class APITests(unittest.TestCase):
         self.assertEqual(opener.call_args.args[1], "bytes=10-13")
         lease.close.assert_awaited()
         self.assertEqual(self.client.get("/streams/expired/0").status_code, 404)
+
+    def test_prepared_preview_waits_once_and_reuses_range_file_without_attachment(self):
+        data = {
+            "url": "https://youtube.com/watch?v=fixture",
+            "type": "video",
+            "items": [
+                {"id": "video-0", "type": "video", "_preview": {"prepare": True, "muted": False}}
+            ],
+        }
+        with self.valid_dns(), patch.object(self.manager, "inspect", AsyncMock(return_value=data)):
+            info = self.client.post("/info", json={"url": "https://youtube.com"}).json()
+        item = info["items"][0]
+        self.assertTrue(item["preview_preparing"])
+        self.assertNotIn("source_url", str(info))
+        requests = []
+
+        async def worker(request, **kwargs):
+            requests.append(request)
+            (Path(request["directory"]) / "preview.mp4").write_bytes(b"0123456789")
+            return {"filename": "preview.mp4"}
+
+        with patch.object(self.manager, "worker", worker):
+            response = self.client.get(item["preview_url"], headers={"Range": "bytes=2-5"})
+            self.assertEqual(response.status_code, 206)
+            self.assertEqual(response.content, b"2345")
+            self.assertEqual(response.headers["content-type"], "video/mp4")
+            self.assertNotIn("content-disposition", response.headers)
+            self.assertEqual(self.client.head(item["preview_url"]).status_code, 200)
+            self.assertEqual(
+                self.client.get(item["preview_url"], headers={"Range": "bytes=8-9"}).content, b"89"
+            )
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(requests[0]["selections"], [{"id": "video-0", "quality": "best"}])
+        self.assertEqual(requests[0]["video_format"], "mp4")
+        self.assertEqual(next(iter(self.manager.jobs.values())).readers, 0)
+
+    def test_prepared_preview_failure_releases_file_lease_and_reports_error(self):
+        main.previews["prepared"] = {
+            "expires": time.time() + 60,
+            "streams": [
+                {
+                    "prepare": True,
+                    "source_url": "https://youtube.com/watch?v=fixture",
+                    "item_id": "video-0",
+                }
+            ],
+        }
+
+        async def worker(request, **kwargs):
+            raise MediaError("size_limit", "ไฟล์ใหญ่เกินกำหนด")
+
+        with patch.object(self.manager, "worker", worker):
+            response = self.client.get("/streams/prepared/0")
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.json()["error"]["code"], "size_limit")
+        self.assertEqual(next(iter(self.manager.jobs.values())).readers, 0)
 
     def test_job_to_file_round_trip(self):
         with self.valid_dns():

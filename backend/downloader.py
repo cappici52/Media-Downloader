@@ -1009,29 +1009,19 @@ def inspect_media(url, cursor=None, *, use_session_first=False):
 
 
 def video_preview(entry):
-    formats = [
-        fmt
-        for fmt in entry.get("formats", [entry])
-        if allowed_format(fmt)
-        and fmt.get("protocol") in ("http", "https")
-        and fmt.get("ext") in ("mp4", "webm")
-        and fmt.get("vcodec") != "none"
-        and (fmt.get("filesize") or 0) <= settings.max_bytes
-    ]
-    if not formats:
+    try:
+        chosen = select_video_formats(entry.get("formats", [entry]))
+    except MediaError:
         return None
-
-    # Progressive MP4 with sound is the most widely playable browser preview.
-    def score(fmt):
-        height = fmt.get("height") or 0
-        return (
-            fmt.get("acodec") not in (None, "none"),
-            fmt.get("ext") == "mp4",
-            height <= 720,
-            height if height <= 720 else -height,
-        )
-
-    fmt = max(formats, key=score)
+    fmt = chosen[0]
+    # Use the same source selection as Download. Split tracks and manifests need
+    # a local MP4 before a native video element can play the best picture + sound.
+    if (
+        len(chosen) > 1
+        or fmt.get("protocol") not in ("http", "https")
+        or fmt.get("ext") not in ("mp4", "webm")
+    ):
+        return {"prepare": True, "media_type": "video/mp4", "muted": False}
     headers = dict(entry.get("http_headers") or {}) | dict(fmt.get("http_headers") or {})
     return {
         "url": fmt["url"],
@@ -1235,8 +1225,10 @@ def select_video_formats(formats, quality="best"):
             ),
         )
     ]
-    if chosen[0].get("acodec") == "none" and audios:
-        chosen.append(max(audios, key=lambda f: f.get("abr") or f.get("tbr") or 0))
+    if chosen[0].get("acodec") == "none":
+        sound = audios or [f for f in formats if f.get("acodec") not in (None, "none")]
+        if sound:
+            chosen.append(max(sound, key=lambda f: f.get("abr") or f.get("tbr") or 0))
     return chosen
 
 

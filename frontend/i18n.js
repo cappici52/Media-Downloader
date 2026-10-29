@@ -2,6 +2,10 @@
 // UI copy uses canonical Thai sources. Only language preference is stored.
 window.MediaI18n = (() => {
   const dictionary = {
+  "เตรียมพรีวิวนานเกินกำหนด กรุณาลองใหม่": "Preview preparation timed out. Please try again.",
+  "กำลังเตรียมพรีวิวคุณภาพสูงสุดและรวมเสียง อาจใช้เวลาสักครู่…": "Preparing the highest-quality preview and combining audio. This may take a moment…",
+  "พรีวิวคุณภาพสูงสุดจากต้นทาง": "Highest available source quality preview",
+  "เตรียมพรีวิวไม่สำเร็จ กรุณาตรวจสอบลิงก์ใหม่": "Could not prepare the preview. Check the link again.",
   "รูปแบบไฟล์วิดีโอ": "Video file format",
   "MKV · เก็บ codec เดิม": "MKV · Original codecs",
   "คงความละเอียดและเฟรมเรตเดิม · MP4/MOV อาจต้องแปลง codec และใช้เวลานานขึ้น": "Keep source resolution and frame rate · MP4/MOV may need codec conversion and take longer",

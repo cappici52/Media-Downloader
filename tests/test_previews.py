@@ -29,7 +29,7 @@ class PreviewTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(MediaError):
                 bounded_range(value)
 
-    def test_preview_prefers_progressive_mp4_with_audio_and_does_not_expose_cookies(self):
+    def test_preview_uses_highest_resolution_and_prepares_split_sound(self):
         base = {
             "protocol": "https",
             "ext": "mp4",
@@ -47,10 +47,25 @@ class PreviewTests(unittest.TestCase):
             },
         }
         result = video_preview(entry)
-        self.assertEqual(result["url"], base["url"])
+        self.assertTrue(result["prepare"])
+        self.assertFalse(result["muted"])
+        self.assertNotIn("Cookie", str(result))
+        self.assertTrue(video_preview({"formats": [dict(base, protocol="m3u8_native")]})["prepare"])
+        entry["formats"] = [
+            dict(base, height=1080, fps=60, url="https://cdn.example/1080.mp4"),
+            base,
+        ]
+        result = video_preview(entry)
+        self.assertEqual(result["url"], "https://cdn.example/1080.mp4")
         self.assertEqual(result["headers"], {"Referer": "https://x.com/"})
         self.assertFalse(result["muted"])
-        self.assertIsNone(video_preview({"formats": [dict(base, protocol="m3u8_native")]}))
+        self.assertNotIn("prepare", result)
+        entry["formats"] = [
+            dict(base, height=2160, fps=30, url="https://cdn.example/4k30.mp4"),
+            dict(base, height=2160, fps=60, url="https://cdn.example/4k60.mp4"),
+        ]
+        self.assertEqual(video_preview(entry)["url"], "https://cdn.example/4k60.mp4")
+        self.assertIsNone(video_preview({"formats": [dict(base, has_drm=True)]}))
 
     def mock_session(self, content, headers, status=206):
         response = Mock()

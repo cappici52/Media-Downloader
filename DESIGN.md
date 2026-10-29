@@ -200,3 +200,5 @@ Video output: the shared `#video-format` native select above Download offers MKV
 | Capability | Canonical owner | Source of truth | Allowed variants | Verification |
 | --- | --- | --- | --- | --- |
 | Select/Listbox | Native HTML select, shared #video-format | frontend/index.html, frontend/styles.css, MediaI18n | Browser-owned popup, dark app surface; MKV/MP4/MOV values | tests/test_pixel_ui.py: format submission and locale persistence |
+
+Video previews choose the same highest-source-quality streams as Download, with no 720p preference. Progressive files stream directly. Split video/audio or manifests prepare one cached MP4 on first playback through the normal guarded job queue. The viewer announces preparation (TH/EN); repeated range requests share the job, and TTL/storage/concurrency limits apply. The user still saves files through the download action.

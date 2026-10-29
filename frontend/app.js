@@ -140,8 +140,8 @@ function openViewer(item, index, trigger) {
     } else {
       const video = $("viewer-video"); video.hidden = false;
       video.poster = item.thumbnail || ""; video.src = item.preview_url;
-      MediaI18n.text($("viewer-status"), "กำลังเปิดตัวอย่างคลิป…");
-      video.onplaying = () => { if (currentViewer === viewerRevision) MediaI18n.text($("viewer-status"), item.preview_muted ? "ตัวอย่างนี้ไม่มีเสียง ไฟล์ดาวน์โหลดจะรวมเสียงตามต้นทาง" : "กำลังเล่นตัวอย่าง · ยังไม่ได้สร้างงานดาวน์โหลด"); };
+      MediaI18n.text($("viewer-status"), item.preview_preparing ? "กำลังเตรียมพรีวิวคุณภาพสูงสุดและรวมเสียง อาจใช้เวลาสักครู่…" : "กำลังเปิดตัวอย่างคลิป…");
+      video.onplaying = () => { if (currentViewer === viewerRevision) MediaI18n.text($("viewer-status"), item.preview_muted ? "ตัวอย่างนี้ไม่มีเสียง ไฟล์ดาวน์โหลดจะรวมเสียงตามต้นทาง" : "พรีวิวคุณภาพสูงสุดจากต้นทาง"); };
       video.onerror = () => { if (currentViewer === viewerRevision) { MediaI18n.text($("viewer-status"), ""); MediaI18n.text($("viewer-error"), "เล่นตัวอย่างไม่ได้ ลิงก์อาจหมดอายุหรือรูปแบบไม่รองรับ ลองตรวจสอบโพสต์ใหม่ หรือเลือกดาวน์โหลดไฟล์"); } };
       video.play().catch(() => { if (currentViewer === viewerRevision && !video.error) MediaI18n.text($("viewer-status"), "กดปุ่มเล่นบนคลิปเพื่อเริ่มดูตัวอย่าง"); });
     }

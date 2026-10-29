@@ -188,9 +188,13 @@ async def info(payload: InfoQuery):
         proxy_thumbnail(item)
         descriptor = item.pop("_preview", None)
         if item["type"] == "video" and isinstance(descriptor, dict):
+            if descriptor.get("prepare"):
+                descriptor["source_url"] = result.get("url") or url
+                descriptor["item_id"] = item["id"]
             streams.append(descriptor)
             item["preview_url"] = f"/streams/{identifier}/{len(streams) - 1}"
             item["preview_muted"] = bool(descriptor.get("muted"))
+            item["preview_preparing"] = bool(descriptor.get("prepare"))
         else:
             item["preview_url"] = None
     result["images"] = [item for item in result.get("items", []) if item["type"] == "image"]
@@ -276,6 +280,46 @@ async def thumbnail(identifier: str, index: int):
         thumbnail_pending -= 1
 
 
+async def prepared_preview(descriptor, request):
+    # A ticket shares one queued job across browser range/HEAD requests. This uses
+    # the normal worker guard, quotas, concurrency limits and TTL cleanup.
+    lock = descriptor.setdefault("lock", asyncio.Lock())
+    async with lock:
+        job = manager.jobs.get(descriptor.get("job_id"))
+        if job is None:
+            job = await manager.submit(
+                descriptor["source_url"],
+                [{"id": descriptor["item_id"], "quality": "best"}],
+                video_format="mp4",
+            )
+            descriptor["job_id"] = job.id
+        job.readers += 1
+    try:
+        async with asyncio.timeout(settings.timeout):
+            while job.status in ("queued", "running"):
+                if await request.is_disconnected():
+                    raise asyncio.CancelledError
+                await asyncio.sleep(0.1)
+        if job.status != "completed":
+            failure = job.error or {
+                "code": "preview_unavailable",
+                "message": "เตรียมพรีวิวไม่สำเร็จ กรุณาตรวจสอบลิงก์ใหม่",
+            }
+            raise MediaError(failure["code"], failure["message"])
+        path = job.directory / job.filename
+        if not path.is_file() or path.is_symlink():
+            raise MediaError("preview_expired", "ตัวอย่างคลิปหมดอายุแล้ว กรุณาตรวจสอบลิงก์ใหม่")
+    except TimeoutError:
+        job.readers -= 1
+        raise MediaError("timeout", "เตรียมพรีวิวนานเกินกำหนด กรุณาลองใหม่") from None
+    except BaseException:
+        job.readers -= 1
+        raise
+    return ClosingFileResponse(
+        path, media_type="video/mp4", on_close=lambda: setattr(job, "readers", job.readers - 1)
+    )
+
+
 @app.api_route("/streams/{identifier}/{index}", methods=["GET", "HEAD"])
 async def stream_preview(identifier: str, index: int, request: Request):
     prune_previews()
@@ -283,9 +327,10 @@ async def stream_preview(identifier: str, index: int, request: Request):
     if entry is None or not 0 <= index < len(entry.get("streams", [])):
         return error_response("preview_expired", "ตัวอย่างคลิปหมดอายุแล้ว กรุณาตรวจสอบลิงก์ใหม่", 404)
     try:
-        lease = await PreviewStream.open(
-            entry["streams"][index], request.headers.get("range"), manager.slots
-        )
+        descriptor = entry["streams"][index]
+        if descriptor.get("prepare"):
+            return await prepared_preview(descriptor, request)
+        lease = await PreviewStream.open(descriptor, request.headers.get("range"), manager.slots)
     except MediaError as error:
         status = 416 if error.code == "invalid_range" else 429 if error.code == "busy" else 502
         return error_response(error.code, str(error), status)

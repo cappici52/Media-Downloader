@@ -54,6 +54,7 @@ class PixelUITests(unittest.TestCase):
                         "type": "video",
                         "thumbnail": "/thumbnails/fixture/1",
                         "preview_url": "/streams/fixture/0",
+                        "preview_preparing": True,
                         "qualities": [
                             {"id": "360p", "label": "360p"},
                             {"id": "720p", "label": "720p"},
