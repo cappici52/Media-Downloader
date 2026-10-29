@@ -260,6 +260,7 @@ class ProfileTests(unittest.TestCase):
 
             progress = Mock()
             with (
+                patch.object(zipfile, "ZIP64_LIMIT", 1),
                 patch.object(downloader, "inspect_media", return_value=inspection),
                 patch.object(downloader, "download_media", side_effect=download),
             ):

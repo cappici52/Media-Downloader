@@ -124,7 +124,7 @@ def ydl_options(*, use_cookies=True):
         "fixup": "never",
         "postprocessors": [],
         "skip_unavailable_fragments": False,
-        "max_filesize": settings.max_bytes,
+        "max_filesize": settings.max_bytes or None,
         "overwrites": False,
         "js_runtimes": {"node": {}},
     }
@@ -1077,6 +1077,8 @@ def download_preview(url, directory):
 
 
 def check_size(directory):
+    if not settings.max_bytes:
+        return
     if sum(p.stat().st_size for p in directory.rglob("*") if p.is_file()) > settings.max_bytes:
         raise MediaError("size_limit", "ไฟล์รวมมีขนาดเกินที่กำหนด")
 
@@ -1182,12 +1184,14 @@ def transcode(inputs, output, audio=False):
 
 
 def run_mux(inputs, mode, output, *, faststart=False):
-    cap = max(1, settings.max_bytes // 2)
+    cap = max(1, settings.max_bytes // 2) if settings.max_bytes else None
     args = inputs + mode + (["-movflags", "+faststart"] if faststart else [])
-    args += ["-fs", str(cap), str(output.resolve())]
+    if cap is not None:
+        args += ["-fs", str(cap)]
+    args += [str(output.resolve())]
     result = subprocess.run(args, capture_output=True, timeout=settings.timeout, shell=False)
     # Intermediates and final output share the quota. Never deliver a capped/truncated file.
-    if output.exists() and output.stat().st_size >= cap:
+    if cap is not None and output.exists() and output.stat().st_size >= cap:
         output.unlink(missing_ok=True)
         raise MediaError("size_limit", "ไฟล์ที่แปลงมีขนาดเกินที่กำหนด")
     return result
@@ -1345,7 +1349,10 @@ def download_media(url, selections, directory, emit, *, inspected=None, video_fo
     archive = directory / "media.zip"
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as bundle:
         for path in results:
-            if archive.stat().st_size + path.stat().st_size > settings.max_bytes:
+            if (
+                settings.max_bytes
+                and archive.stat().st_size + path.stat().st_size > settings.max_bytes
+            ):
                 raise MediaError("size_limit", "ไฟล์ ZIP มีขนาดเกินที่กำหนด")
             bundle.write(path, path.name)
             path.unlink()

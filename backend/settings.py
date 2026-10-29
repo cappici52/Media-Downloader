@@ -12,22 +12,27 @@ def positive(name, default):
     return value
 
 
-def duration_limit():
-    value = int(os.getenv("MAX_DURATION_SECONDS", 0))
+def nonnegative(name, default=0):
+    value = int(os.getenv(name, default))
     if value < 0:
-        raise ValueError("MAX_DURATION_SECONDS must be zero or positive")
+        raise ValueError(f"{name} must be zero or positive")
     return value
+
+
+def duration_limit():
+    return nonnegative("MAX_DURATION_SECONDS")
 
 
 @dataclass(frozen=True)
 class Settings:
-    max_bytes: int = positive("MAX_FILE_MB", 500) * 1024 * 1024
+    max_bytes: int = nonnegative("MAX_FILE_MB") * 1024 * 1024
     max_preview_bytes: int = positive("MAX_PREVIEW_FILE_MB", 8192) * 1024 * 1024
     max_duration: int = duration_limit()
     max_items: int = positive("MAX_ITEMS", 100)
     workers: int = positive("MAX_CONCURRENT_JOBS", 2)
     queue_size: int = positive("MAX_QUEUED_JOBS", 10)
-    max_storage: int = positive("MAX_STORAGE_MB", 2048) * 1024 * 1024
+    max_storage: int = nonnegative("MAX_STORAGE_MB") * 1024 * 1024
+    min_free_bytes: int = positive("MIN_FREE_DISK_MB", 512) * 1024 * 1024
     max_history: int = positive("MAX_JOB_HISTORY", 100)
     ttl: int = positive("FILE_TTL_SECONDS", 3600)
     timeout: int = positive("JOB_TIMEOUT_SECONDS", 1800)

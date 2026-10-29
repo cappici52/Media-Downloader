@@ -2,6 +2,8 @@
 // UI copy uses canonical Thai sources. Only language preference is stored.
 window.MediaI18n = (() => {
   const dictionary = {
+  "ขนาดไฟล์ไม่จำกัด": "No file size limit",
+  "พื้นที่ดิสก์ว่างไม่พอ กรุณาเพิ่มพื้นที่แล้วลองใหม่": "Not enough free disk space. Free up space and try again.",
   "เบราว์เซอร์เล่น codec ของคลิปนี้ไม่ได้ ลองดาวน์โหลดไฟล์เพื่อเปิดด้วยโปรแกรมที่รองรับ": "Your browser cannot play this video codec. Download the file and open it with a compatible player.",
   "ข้อมูลช่วงวิดีโอจากต้นทางไม่ถูกต้อง": "The source returned invalid video range data.",
   "ไฟล์ต้นทางใหญ่เกินขีดจำกัดพรีวิว": "The source file exceeds the preview size limit.",
@@ -113,6 +115,8 @@ window.MediaI18n = (() => {
   let language = "th";
   try { if (localStorage.getItem("media-language") === "en") language = "en"; } catch { /* Optional storage. */ }
   const patterns = [
+    [/^ขนาดไฟล์ไม่จำกัด · ความยาววิดีโอไม่จำกัด · ไม่เกิน ([\d,.]+) รายการ · ไฟล์เก็บไว้ ([\d,.]+) นาที$/, (_, items, ttl) => `No file size limit · No video duration limit · ${items} items · Files kept for ${ttl} min`],
+    [/^ขนาดไฟล์ไม่จำกัด · วิดีโอไม่เกิน ([\d,.]+) นาที · ไม่เกิน ([\d,.]+) รายการ · ไฟล์เก็บไว้ ([\d,.]+) นาที$/, (_, minutes, items, ttl) => `No file size limit · ${minutes} min/video · ${items} items · Files kept for ${ttl} min`],
     [/^สูงสุด ([\d,.]+) MB ต่องาน · ความยาววิดีโอไม่จำกัด · ไม่เกิน ([\d,.]+) รายการ · ไฟล์เก็บไว้ ([\d,.]+) นาที$/, (_, size, items, ttl) => `Up to ${size} MB/job · No video duration limit · ${items} items · Files kept for ${ttl} min`],
     [/^เลือก ([\d,]+) \/ ([\d,]+) (โพสต์|รายการ)(.*)$/, (_, a, b, kind, tail) => `Selected ${a} / ${b} ${kind === "โพสต์" ? "posts" : "items"}${translate(tail)}`],
     [/^ · รวม ([\d,]+) สื่อ(.*)$/, (_, n, tail) => ` · ${n} media${translate(tail)}`],

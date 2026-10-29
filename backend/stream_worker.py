@@ -13,7 +13,7 @@ from .network import install_network_guard
 from .settings import settings
 from .validators import validate_network_url
 
-CHUNK_LIMIT = min(8 * 1024 * 1024, settings.max_bytes)
+CHUNK_LIMIT = 8 * 1024 * 1024
 
 
 def bounded_range(value):

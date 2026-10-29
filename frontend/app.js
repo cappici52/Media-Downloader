@@ -300,7 +300,8 @@ function renderMedia(result, preserve = false) {
   if (result.limits) {
     const limits = result.limits;
     const duration = limits.max_duration_seconds ? `วิดีโอไม่เกิน ${numbers.format(limits.max_duration_seconds / 60)} นาที` : "ความยาววิดีโอไม่จำกัด";
-    MediaI18n.text($("limits"), `สูงสุด ${numbers.format(limits.max_file_mb)} MB ต่องาน · ${duration} · ไม่เกิน ${numbers.format(limits.max_items)} รายการ · ไฟล์เก็บไว้ ${numbers.format(limits.ttl_seconds / 60)} นาที`);
+    const size = limits.max_file_mb ? `สูงสุด ${numbers.format(limits.max_file_mb)} MB ต่องาน` : "ขนาดไฟล์ไม่จำกัด";
+    MediaI18n.text($("limits"), `${size} · ${duration} · ไม่เกิน ${numbers.format(limits.max_items)} รายการ · ไฟล์เก็บไว้ ${numbers.format(limits.ttl_seconds / 60)} นาที`);
   }
   MediaI18n.prune();
   step(1); selectionState();

@@ -31,6 +31,11 @@ def directory_size(directory):
     return size
 
 
+def check_free_space(limits):
+    if shutil.disk_usage(limits.root).free < limits.min_free_bytes:
+        raise MediaError("storage_limit", "พื้นที่ดิสก์ว่างไม่พอ กรุณาเพิ่มพื้นที่แล้วลองใหม่")
+
+
 async def stop_process(process):
     if process.returncode is not None:
         return
@@ -101,13 +106,18 @@ async def run_worker(request, *, timeout, progress=None, limits=settings):
         while True:
             await asyncio.sleep(0.25)
             if (
-                request.get("directory")
+                limits.max_bytes
+                and request.get("directory")
                 and await asyncio.to_thread(directory_size, Path(request["directory"]))
                 > limits.max_bytes
             ):
                 raise MediaError("size_limit", "ไฟล์รวมมีขนาดเกินที่กำหนด")
-            if await asyncio.to_thread(directory_size, limits.root) > limits.max_storage:
+            if (
+                limits.max_storage
+                and await asyncio.to_thread(directory_size, limits.root) > limits.max_storage
+            ):
                 raise MediaError("storage_limit", "พื้นที่เก็บไฟล์เต็ม กรุณารอระบบล้างไฟล์เก่า")
+            await asyncio.to_thread(check_free_space, limits)
 
     communication = asyncio.create_task(communicate())
     monitoring = asyncio.create_task(monitor())
@@ -193,8 +203,10 @@ class JobManager:
             raise MediaError("queue_full", "คิวงานเต็ม กรุณารอสักครู่แล้วลองใหม่")
         if len(self.jobs) >= self.limits.max_history:
             raise MediaError("history_full", "มีงานในระบบครบจำนวนแล้ว กรุณารอระบบล้างงานเก่า")
+        await asyncio.to_thread(check_free_space, self.limits)
         if (
-            await asyncio.to_thread(directory_size, self.limits.root) + self.limits.max_bytes
+            self.limits.max_storage
+            and await asyncio.to_thread(directory_size, self.limits.root) + self.limits.max_bytes
             > self.limits.max_storage
         ):
             raise MediaError("storage_limit", "พื้นที่เก็บไฟล์ไม่เพียงพอ กรุณารอระบบล้างไฟล์เก่า")

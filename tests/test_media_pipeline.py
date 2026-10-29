@@ -112,7 +112,8 @@ class VideoPipelineTests(unittest.TestCase):
     def test_local_conversion_preserves_video_in_all_containers(self):
         for extension, audio in (("mp3", True), ("mkv", False), ("mp4", False), ("mov", False)):
             output = self.root / ("result." + extension)
-            downloader.transcode([self.source], output, audio=audio)
+            with patch.object(downloader, "settings", replace(downloader.settings, max_bytes=0)):
+                downloader.transcode([self.source], output, audio=audio)
             self.assertGreater(output.stat().st_size, 100)
             if not audio:
                 stream = self.probe(output)["streams"][0]

@@ -376,7 +376,9 @@ def download_profile(url, selections, directory, emit, *, video_format="mkv"):
                     for member in source.infolist():
                         with (
                             source.open(member) as incoming,
-                            archive.open(prefix + member.filename, "w") as outgoing,
+                            archive.open(
+                                prefix + member.filename, "w", force_zip64=True
+                            ) as outgoing,
                         ):
                             shutil.copyfileobj(incoming, outgoing, 65536)
                         check_size(directory)

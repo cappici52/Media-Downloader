@@ -4,6 +4,8 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
 from backend.downloader import MediaError
 from backend.jobs import JobManager, run_worker
 from backend.settings import settings
@@ -45,6 +47,24 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(job.directory.exists())
         finally:
             await manager.close()
+
+    async def test_unlimited_jobs_admit_large_current_storage_and_low_disk_still_rejects(self):
+        limits = replace(self.limits, max_bytes=0, max_storage=0)
+        manager = JobManager(limits)
+        with patch("backend.jobs.directory_size", return_value=10 * 1024 * 1024 * 1024):
+            job = await manager.submit("https://youtube.com", [{"id": "video-0"}])
+        self.assertEqual(job.status, "queued")
+        other = JobManager(limits)
+        with (
+            patch(
+                "backend.jobs.shutil.disk_usage",
+                return_value=SimpleNamespace(free=limits.min_free_bytes - 1),
+            ),
+            self.assertRaises(MediaError) as error,
+        ):
+            await other.submit("https://youtube.com", [{"id": "video-0"}])
+        self.assertEqual(error.exception.code, "storage_limit")
+        self.assertEqual(len(other.jobs), 0)
 
     async def test_queue_rejects_without_creating_directory(self):
         manager = JobManager(self.limits)

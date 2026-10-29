@@ -33,7 +33,7 @@ class PixelUITests(unittest.TestCase):
                 ],
                 "limits": {
                     "max_items": 100,
-                    "max_file_mb": 500,
+                    "max_file_mb": 0,
                     "max_duration_seconds": 0,
                     "ttl_seconds": 3600,
                 },
@@ -87,7 +87,7 @@ class PixelUITests(unittest.TestCase):
             polls = []
             job_id = "a" * 32
             limits = {
-                "max_file_mb": 500,
+                "max_file_mb": 0,
                 "max_duration_seconds": 0,
                 "max_items": 100,
                 "ttl_seconds": 3600,
@@ -226,6 +226,7 @@ class PixelUITests(unittest.TestCase):
                 "The request could not be completed", page.locator("body").inner_text()
             )
             self.assertIn("No video duration limit", page.locator("#limits").inner_text())
+            self.assertIn("No file size limit", page.locator("#limits").inner_text())
             page.reload()
             expect(page.locator("#inspect")).to_have_text("Check link")
             page.locator("#url").fill("https://youtube.com/watch?v=fixture")
