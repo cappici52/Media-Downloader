@@ -4,6 +4,7 @@ const form = $("link-form"), urlInput = $("url"), inspectButton = $("inspect"), 
 let media = null, inspectedUrl = "", inspection = null, revision = 0, activeJob = null, polling = false, submitting = false;
 const selected = new Map();
 let profileLoading = null, readAllPosts = false, profileReturn = null;
+const postViews = new Map();
 const numbers = new Intl.NumberFormat("th-TH", { maximumFractionDigits: 0 });
 const picker = $("media-picker");
 let pickerTrigger = null, viewerTrigger = null, viewerRevision = 0, previewDiagnosis = null;
@@ -233,8 +234,21 @@ async function api(path, options = {}) {
   } finally { clearTimeout(timeout); }
 }
 
-function renderMedia(result, preserve = false) {
-  const previous = preserve ? new Map(selected) : new Map();
+function captureView() {
+  return { media, selected: new Map(selected), url: inspectedUrl, tiles: [...$("media-list").children], thumbnail: $("thumbnail"), scrollTop: picker.querySelector(".picker-body").scrollTop, root: document.createDocumentFragment() };
+}
+function stashView(view) {
+  // Retain actual image nodes so returning does not request no-store thumbnails again.
+  const blank = view.thumbnail.cloneNode(false); blank.removeAttribute("src");
+  view.thumbnail.replaceWith(blank);
+  view.root.append(view.thumbnail, ...view.tiles);
+}
+function retainViewTranslations() {
+  MediaI18n.prune([...postViews.values()].map((view) => view.root).concat(profileReturn ? [profileReturn.view.root] : []));
+}
+function renderMedia(result, preserve = false, restored = null) {
+  const previous = restored ? restored.selected : preserve ? new Map(selected) : new Map();
+  const rows = new Map((restored ? restored.tiles : preserve ? [...$("media-list").children] : []).map((row) => [row.dataset.id, row]));
   media = result;
   selected.clear();
   const isProfile = result.type === "profile";
@@ -251,16 +265,26 @@ function renderMedia(result, preserve = false) {
   const kinds = { video: "วิดีโอ", image: "รูปภาพ", carousel: "โพสต์หลายรายการ", profile: `โปรไฟล์ ${result.platform || "Instagram"}` };
   const duration = result.duration ? ` · ${numbers.format(Math.floor(result.duration / 60))}:${String(Math.floor(result.duration % 60)).padStart(2, "0")} นาที` : "";
   MediaI18n.text($("media-meta"), `${kinds[result.type] || "สื่อ"} · ${numbers.format(result.items.length)} รายการ${duration}`);
+  if (restored) $("thumbnail").replaceWith(restored.thumbnail);
   const thumbnail = $("thumbnail");
   thumbnail.hidden = true;
   $("thumbnail-fallback").hidden = false;
-  thumbnail.onload = () => { thumbnail.hidden = false; $("thumbnail-fallback").hidden = true; };
-  thumbnail.onerror = () => { thumbnail.hidden = true; $("thumbnail-fallback").hidden = false; };
-  if (result.thumbnail?.startsWith("/thumbnails/")) thumbnail.src = result.thumbnail;
+  thumbnail.onload = () => { if (thumbnail !== $("thumbnail")) return; thumbnail.hidden = false; $("thumbnail-fallback").hidden = true; };
+  thumbnail.onerror = () => { if (thumbnail !== $("thumbnail")) return; thumbnail.hidden = true; $("thumbnail-fallback").hidden = false; };
+  if (result.thumbnail?.startsWith("/thumbnails/")) {
+    if (thumbnail.getAttribute("src") !== result.thumbnail) thumbnail.src = result.thumbnail;
+    else if (thumbnail.complete && thumbnail.naturalWidth) thumbnail.onload();
+  }
   else thumbnail.removeAttribute("src");
   $("media-list").replaceChildren();
   result.items.forEach((item, index) => {
-    const row = document.createElement("article"); row.className = "media-tile"; row.dataset.id = item.id;
+    const existing = rows.get(item.id);
+    if (existing?._mediaItem === item) {
+      const checked = previous.has(item.id) ? previous.get(item.id) : true;
+      selected.set(item.id, checked); existing.querySelector("[data-item]").checked = checked;
+      $("media-list").append(existing); return;
+    }
+    const row = document.createElement("article"); row.className = "media-tile"; row.dataset.id = item.id; row._mediaItem = item;
     const preview = document.createElement("button"); preview.type = "button"; preview.className = "tile-preview";
     MediaI18n.attr(preview, "aria-label", `${item.type === "post" ? "ดูสื่อในโพสต์" : item.type === "video" ? "เล่นวิดีโอ" : "ดูรูปภาพ"} ${index + 1}`);
     const placeholder = document.createElement("span"); placeholder.className = "tile-placeholder"; MediaI18n.text(placeholder, "กำลังโหลดตัวอย่าง…");
@@ -303,7 +327,7 @@ function renderMedia(result, preserve = false) {
     const size = limits.max_file_mb ? `สูงสุด ${numbers.format(limits.max_file_mb)} MB ต่องาน` : "ขนาดไฟล์ไม่จำกัด";
     MediaI18n.text($("limits"), `${size} · ${duration} · ไม่เกิน ${numbers.format(limits.max_items)} รายการ · ไฟล์เก็บไว้ ${numbers.format(limits.ttl_seconds / 60)} นาที`);
   }
-  MediaI18n.prune();
+  retainViewTranslations();
   step(1); selectionState();
   openPicker();
 }
@@ -349,15 +373,21 @@ $("load-all-posts").addEventListener("click", () => loadProfilePages(true));
 $("stop-profile").addEventListener("click", () => { readAllPosts = false; profileLoading?.abort(); });
 async function openProfilePost(item, trigger) {
   if (inspection || activeJob || submitting || profileLoading) return;
-  const snapshot = { media, selected: new Map(selected), url: inspectedUrl, id: item.id };
+  let cached = postViews.get(item.url);
+  if (cached && cached.expiresAt <= Date.now()) { postViews.delete(item.url); cached = null; }
+  const snapshot = { view: captureView(), id: item.id, postUrl: item.url, postExpiresAt: cached?.expiresAt };
   const current = revision, controller = new AbortController(); inspection = controller;
   error(); trigger.setAttribute("aria-busy", "true"); selectionState();
   try {
-    const result = await api("/info", { method: "POST", body: JSON.stringify({ url: item.url }), signal: controller.signal });
-    if (revision !== current) return;
-    closeViewer(false); profileReturn = snapshot; inspectedUrl = result.url || item.url;
-    renderMedia(result); $("return-profile-picker").hidden = false;
+    const result = cached?.media || await api("/info", { method: "POST", body: JSON.stringify({ url: item.url }), signal: controller.signal });
+    if (revision !== current || controller.signal.aborted) return;
+    snapshot.view.selected = new Map(selected);
+    snapshot.view.scrollTop = picker.querySelector(".picker-body").scrollTop;
+    snapshot.postExpiresAt ??= Date.now() + Math.min(300000, (result.limits?.ttl_seconds || 3600) * 1000);
+    closeViewer(false); profileReturn = snapshot; stashView(snapshot.view); inspectedUrl = result.url || item.url;
+    renderMedia(result, false, cached); $("return-profile-picker").hidden = false;
     $("picker-title").setAttribute("tabindex", "-1"); $("picker-title").focus();
+    picker.querySelector(".picker-body").scrollTop = cached?.scrollTop || 0;
   } catch (issue) {
     if (revision === current) MediaI18n.text($("profile-error"), issue.message);
   } finally {
@@ -367,17 +397,21 @@ async function openProfilePost(item, trigger) {
 }
 function returnToProfile() {
   if (!profileReturn || inspection || activeJob || submitting) return;
-  const snapshot = profileReturn; profileReturn = null; closeViewer(false);
-  selected.clear(); snapshot.selected.forEach((value, key) => selected.set(key, value));
-  inspectedUrl = snapshot.url; renderMedia(snapshot.media, true);
+  const snapshot = profileReturn; closeViewer(false);
+  const post = captureView(); post.expiresAt = snapshot.postExpiresAt;
+  stashView(post); postViews.delete(snapshot.postUrl); postViews.set(snapshot.postUrl, post);
+  while (postViews.size > 6) postViews.delete(postViews.keys().next().value);
+  profileReturn = null; inspectedUrl = snapshot.view.url;
+  renderMedia(snapshot.view.media, true, snapshot.view);
   $("return-profile-picker").hidden = true;
-  [...document.querySelectorAll(".media-tile")].find((tile) => tile.dataset.id === snapshot.id)?.querySelector("button")?.focus();
+  [...document.querySelectorAll(".media-tile")].find((tile) => tile.dataset.id === snapshot.id)?.querySelector("button")?.focus({ preventScroll: true });
+  picker.querySelector(".picker-body").scrollTop = snapshot.view.scrollTop;
 }
 $("return-profile").addEventListener("click", returnToProfile);
 $("return-profile-picker").addEventListener("click", returnToProfile);
 urlInput.addEventListener("input", () => {
   if (picker.open) picker.close();
-  revision++;
+  revision++; postViews.clear(); MediaI18n.prune();
   setCatState("idle");
   readAllPosts = false; profileLoading?.abort(); profileLoading = null; profileReturn = null;
   inspection?.abort(); inspection = null;
@@ -396,7 +430,7 @@ form.addEventListener("submit", async (event) => {
     const parsed = new URL(url);
     if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
   } catch { error("กรุณาวางลิงก์ http หรือ https ที่ถูกต้อง", true); return; }
-  const current = ++revision;
+  const current = ++revision; postViews.clear(); MediaI18n.prune();
   profileReturn = null; readAllPosts = false; profileLoading?.abort(); profileLoading = null;
   inspection = new AbortController();
   error(); busy(inspectButton, true);

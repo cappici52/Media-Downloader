@@ -112,6 +112,8 @@ window.MediaI18n = (() => {
   "ดึงข้อมูลไม่สำเร็จ ลองอัปเดต yt-dlp และ gallery-dl แล้วตรวจสอบลิงก์อีกครั้ง": "Could not extract media. Update yt-dlp and gallery-dl, then check the link again."
 };
   const bindings = new Map();
+  let retainedRoots = [];
+  const retained = (element) => retainedRoots.some((root) => root.contains(element));
   let language = "th";
   try { if (localStorage.getItem("media-language") === "en") language = "en"; } catch { /* Optional storage. */ }
   const patterns = [
@@ -156,13 +158,13 @@ window.MediaI18n = (() => {
   function original(element) { return bindings.get(element)?.get("textContent") ?? element.textContent; }
   function append(element, source) { text(element, original(element) + source); }
   function label(source) { const element = document.createElement("span"); text(element, source); return element; }
-  function prune() { for (const element of bindings.keys()) if (!element.isConnected) bindings.delete(element); }
+  function prune(roots = []) { retainedRoots = roots; for (const element of bindings.keys()) if (!element.isConnected && !retained(element)) bindings.delete(element); }
   function setLanguage(next) {
     language = next === "en" ? "en" : "th";
     try { localStorage.setItem("media-language", language); } catch { /* Optional storage. */ }
     document.documentElement.lang = language;
     for (const [element, fields] of bindings) {
-      if (!element.isConnected) { bindings.delete(element); continue; }
+      if (!element.isConnected && !retained(element)) { bindings.delete(element); continue; }
       for (const [attribute, source] of fields) {
         if (attribute === "textContent") element.textContent = translate(source);
         else element.setAttribute(attribute, translate(source));

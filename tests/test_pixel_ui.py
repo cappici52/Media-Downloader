@@ -68,6 +68,127 @@ class PixelUITests(unittest.TestCase):
             expect(page.locator("#media-viewer")).to_be_hidden()
             browser.close()
 
+    def test_profile_back_and_reopen_reuse_loaded_views_until_expiry(self):
+        from playwright.sync_api import sync_playwright, expect
+
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True, channel="chrome")
+            page = browser.new_page(viewport={"width": 1280, "height": 900})
+            metadata = []
+            thumbnails = []
+            limits = {
+                "max_file_mb": 0,
+                "max_duration_seconds": 0,
+                "max_items": 100,
+                "ttl_seconds": 3600,
+            }
+
+            def info(route):
+                body = route.request.post_data_json
+                metadata.append(body)
+                if "/p/" not in body["url"]:
+                    indexes = [12] if body.get("cursor") else range(12)
+                    route.fulfill(
+                        json={
+                            "type": "profile",
+                            "url": "https://www.instagram.com/fixture/",
+                            "title": "@fixture",
+                            "thumbnail": "/thumbnails/profile/0",
+                            "next_cursor": None if body.get("cursor") else "next",
+                            "limits": limits,
+                            "items": [
+                                {
+                                    "id": f"post-P{i}",
+                                    "type": "post",
+                                    "url": f"https://www.instagram.com/p/P{i}/",
+                                    "thumbnail": f"/thumbnails/profile/{i}",
+                                    "title": f"Post {i}",
+                                    "media_count": 2,
+                                    "has_video": False,
+                                }
+                                for i in indexes
+                            ],
+                        }
+                    )
+                else:
+                    route.fulfill(
+                        json={
+                            "type": "carousel",
+                            "url": body["url"],
+                            "title": "Post media",
+                            "thumbnail": "/thumbnails/post/0",
+                            "limits": limits,
+                            "items": [
+                                {
+                                    "id": f"image-{i}",
+                                    "type": "image",
+                                    "qualities": [],
+                                    "thumbnail": f"/thumbnails/post/{i}",
+                                }
+                                for i in range(2)
+                            ],
+                        }
+                    )
+
+            page.route("**/info", info)
+
+            def image(route):
+                thumbnails.append(route.request.url)
+                route.fulfill(
+                    content_type="image/svg+xml",
+                    body='<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><path fill="#80d8ed" d="M0 0h160v160H0z"/></svg>',
+                )
+
+            page.route("**/thumbnails/**", image)
+            page.goto(os.environ["MEDIA_UI_URL"])
+            page.locator("#url").fill("https://www.instagram.com/fixture/")
+            page.locator("#inspect").click()
+            expect(page.locator(".media-tile")).to_have_count(12)
+            page.locator("[data-item]").nth(1).uncheck()
+            page.locator(".tile-preview").nth(8).scroll_into_view_if_needed()
+            expect(page.locator(".media-tile img").nth(8)).to_have_class("is-loaded")
+            scroll = page.locator(".picker-body").evaluate("e=>e.scrollTop")
+            page.evaluate("() => {window.profileTile=document.querySelector('.media-tile')}")
+            loaded = sum(url.endswith("/profile/8") for url in thumbnails)
+            page.locator(".tile-preview").nth(8).click()
+            expect(page.locator(".media-tile")).to_have_count(2)
+            expect(page.locator(".media-tile img").first).to_have_class("is-loaded")
+            page.locator("[data-item]").first.uncheck()
+            page.locator(".picker-header [data-language-toggle]").click()
+            page.locator("#return-profile-picker").click()
+            expect(page.locator(".media-tile")).to_have_count(12)
+            self.assertTrue(
+                page.evaluate("() => window.profileTile===document.querySelector('.media-tile')")
+            )
+            self.assertFalse(page.locator("[data-item]").nth(1).is_checked())
+            self.assertAlmostEqual(
+                page.locator(".picker-body").evaluate("e=>e.scrollTop"), scroll, delta=2
+            )
+            self.assertEqual(sum(url.endswith("/profile/8") for url in thumbnails), loaded)
+            post_requests = sum("/p/" in body["url"] for body in metadata)
+            post_images = sum("/thumbnails/post/" in url for url in thumbnails)
+            page.locator(".tile-preview").nth(8).click()
+            expect(page.locator(".media-tile")).to_have_count(2)
+            self.assertEqual(sum("/p/" in body["url"] for body in metadata), post_requests)
+            self.assertEqual(sum("/thumbnails/post/" in url for url in thumbnails), post_images)
+            self.assertFalse(page.locator("[data-item]").first.is_checked())
+            expect(page.locator(".tile-selection").first).to_contain_text("Image 1")
+            page.locator("#return-profile-picker").click()
+            page.locator(".picker-header [data-language-toggle]").click()
+            page.locator("#load-more").click()
+            expect(page.locator(".media-tile")).to_have_count(13)
+            self.assertTrue(
+                page.evaluate("() => window.profileTile===document.querySelector('.media-tile')")
+            )
+            page.locator(".tile-preview").nth(8).click()
+            expect(page.locator(".tile-selection").first).to_contain_text("รูปภาพ 1")
+            page.locator("#return-profile-picker").click()
+            page.evaluate("() => {const future=Date.now()+300001; Date.now=()=>future}")
+            page.locator(".tile-preview").nth(8).click()
+            expect(page.locator(".media-tile")).to_have_count(2)
+            self.assertEqual(sum("/p/" in body["url"] for body in metadata), post_requests + 1)
+            browser.close()
+
     def test_language_state_and_pixel_workflows(self):
         from playwright.sync_api import sync_playwright, expect
 

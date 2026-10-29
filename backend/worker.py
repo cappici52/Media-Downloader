@@ -10,6 +10,7 @@ from .downloader import (
     download_media,
     download_preview,
     inspect_media,
+    instagram_post_url,
     friendly_error,
     disable_external_downloaders,
 )
@@ -27,7 +28,11 @@ def main():
     disable_external_downloaders()
     try:
         if request["action"] == "info":
-            result = inspect_media(request["url"], request.get("cursor"))[0]
+            result = inspect_media(
+                request["url"],
+                request.get("cursor"),
+                use_session_first=bool(instagram_post_url(request["url"])),
+            )[0]
         elif request["action"] == "download":
             result = {
                 "filename": download_media(
