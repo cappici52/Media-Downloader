@@ -1090,6 +1090,7 @@ def transcode(inputs, output, audio=False):
     probe = shutil.which("ffprobe")
     if not probe:
         raise MediaError("ffmpeg_missing", "ไม่พบ ffprobe กรุณาติดตั้งชุด ffmpeg ให้ครบ")
+    stream_types = []
     for path in inputs:
         result = subprocess.run(
             [
@@ -1099,9 +1100,9 @@ def transcode(inputs, output, audio=False):
                 "-protocol_whitelist",
                 "file,pipe",
                 "-show_entries",
-                "format=duration",
+                "format=duration:stream=codec_type",
                 "-of",
-                "default=noprint_wrappers=1:nokey=1",
+                "json",
                 str(path.resolve()),
             ],
             capture_output=True,
@@ -1109,8 +1110,12 @@ def transcode(inputs, output, audio=False):
             shell=False,
         )
         try:
-            duration = float(result.stdout.strip())
-        except ValueError:
+            metadata = json.loads(result.stdout)
+            duration = float(metadata["format"]["duration"])
+            stream_types.append(
+                {stream.get("codec_type") for stream in metadata.get("streams", [])}
+            )
+        except (ValueError, KeyError, TypeError):
             raise MediaError(
                 "duration_unknown", "ตรวจสอบความยาววิดีโอไม่ได้ จึงไม่สามารถดาวน์โหลดได้"
             ) from None
@@ -1123,10 +1128,23 @@ def transcode(inputs, output, audio=False):
     args = [executable, "-nostdin", "-v", "error", "-y"]
     for path in inputs:
         args += ["-protocol_whitelist", "file,pipe", "-i", str(path.resolve())]
-    mapping = ["-map", "0:v:0", "-map", "1:a:0" if len(inputs) > 1 else "0:a:0?"]
-    modes = (
-        [["-vn", "-codec:a", "libmp3lame", "-b:a", "192k"]] if audio else [mapping + ["-c", "copy"]]
+    # Extractor metadata can advertise sound on a progressive fallback that is
+    # actually silent. Map only streams confirmed in the downloaded files.
+    audio_input = next(
+        (index for index in reversed(range(len(inputs))) if "audio" in stream_types[index]), None
     )
+    if audio:
+        if audio_input is None:
+            raise MediaError("no_media", "ไม่พบเสียงที่รองรับในคลิปนี้")
+        modes = [["-map", f"{audio_input}:a:0", "-vn", "-codec:a", "libmp3lame", "-b:a", "192k"]]
+        mapping = []
+    else:
+        if "video" not in stream_types[0]:
+            raise MediaError("no_media", "ไม่พบวิดีโอที่รองรับในคลิปนี้")
+        mapping = ["-map", "0:v:0"]
+        if audio_input is not None:
+            mapping += ["-map", f"{audio_input}:a:0"]
+        modes = [mapping + ["-c", "copy"]]
     container = output.suffix.lower()
     if not audio and container in (".mp4", ".mov"):
         # Keep original video packets if only the audio codec is incompatible.

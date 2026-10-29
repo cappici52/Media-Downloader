@@ -199,6 +199,58 @@ class VideoPipelineTests(unittest.TestCase):
             else:
                 self.assertEqual(stream["codec_name"], "h264")
 
+    def test_silent_fallback_does_not_fail_or_discard_sound_from_primary_video(self):
+        silent = self.root / "silent.mp4"
+        subprocess.run(
+            [
+                shutil.which("ffmpeg"),
+                "-v",
+                "error",
+                "-i",
+                str(self.source),
+                "-map",
+                "0:v:0",
+                "-c",
+                "copy",
+                str(silent),
+            ],
+            check=True,
+            timeout=20,
+        )
+        for primary, has_audio in ((silent, False), (self.source, True)):
+            for extension in ("mp4", "mkv", "mov"):
+                output = self.root / f"silent-fallback-{has_audio}.{extension}"
+                downloader.transcode([primary, silent], output)
+                info = self.probe(output)
+                self.assertEqual(
+                    any(stream["codec_type"] == "audio" for stream in info["streams"]), has_audio
+                )
+                self.assertEqual(self.video_hash(output), self.video_hash(primary))
+        audio = self.root / "audio.m4a"
+        subprocess.run(
+            [
+                shutil.which("ffmpeg"),
+                "-v",
+                "error",
+                "-i",
+                str(self.source),
+                "-vn",
+                "-c:a",
+                "copy",
+                str(audio),
+            ],
+            check=True,
+            timeout=20,
+        )
+        output = self.root / "separate.mp4"
+        downloader.transcode([silent, audio], output)
+        self.assertEqual(
+            [stream["codec_type"] for stream in self.probe(output)["streams"]], ["video", "audio"]
+        )
+        with self.assertRaises(downloader.MediaError) as error:
+            downloader.transcode([silent], self.root / "silent.mp3", audio=True)
+        self.assertEqual(error.exception.code, "no_media")
+
     def test_duration_limit_rejects_local_file(self):
         with patch.object(downloader, "settings", replace(downloader.settings, max_duration=1)):
             with self.assertRaises(downloader.MediaError) as error:
