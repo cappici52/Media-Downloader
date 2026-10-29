@@ -108,9 +108,18 @@ white cat, curled tail, pink open mouth, landscape tile and blue play tile.
 that reference. `cat.svg` embeds that unchanged PNG with a content-bound viewBox,
 so all three surfaces share one self-contained image and the existing asset route.
 Desktop header is 88×64px, empty state 184×120px; mobile uses 64×48 and 160×104px.
-The icon URL carries `?v=2` to refresh browser favicon caches. A generated full-screen
+The icon URL carries `?v=3` to refresh browser favicon caches. A generated full-screen
 concept established the original visual direction.
-No decorative animation; reduced motion disables any future transitions.
+Inspection animation follows real request state: idle → chewing while `/info`
+is pending → spitting for 620ms after a successful non-empty result → media picker.
+`cat-chewing.png` contains two generated, aligned mouth frames from the same cat.
+The self-contained `cat.svg` exposes closed/open SVG views; CSS alternates two
+predecoded images every 220ms. A fixed 184×120px scene (160×104 mobile) reserves
+layout. Failed frame decoding retains the original cat. Success returns the
+original open-mouth/media sprite and briefly emits code-native pixel media tiles.
+Error, URL edits and cancellation reset to idle; stale requests cannot emit tiles
+or open the picker. Reduced-motion preference uses a static original cat and skips
+the success delay. No decorative motion runs outside inspection.
 `frontend/i18n.js` owns Thai/English UI copy, dynamic counters/status templates,
 accessible labels, placeholders and document title. Static leaf copy is marked
 `data-i18n`; runtime copy binds canonical Thai sources to existing text/attribute

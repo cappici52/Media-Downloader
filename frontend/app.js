@@ -8,6 +8,35 @@ const numbers = new Intl.NumberFormat("th-TH", { maximumFractionDigits: 0 });
 const picker = $("media-picker");
 let pickerTrigger = null, viewerTrigger = null, viewerRevision = 0;
 
+let catStartedAt = 0;
+function setCatState(state) {
+  const scene = $("cat-scene");
+  scene.dataset.state = state;
+  delete scene.dataset.ready;
+  if (state === "chewing") {
+    catStartedAt = performance.now();
+    Promise.all([...scene.querySelectorAll(".cat-chew")].map(image => image.decode()))
+      .then(() => { if (scene.dataset.state === "chewing") scene.dataset.ready = "true"; })
+      .catch(() => { /* Keep the original cat visible if an animation asset fails. */ });
+  }
+}
+function waitForCat(milliseconds, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) { reject(new DOMException("Aborted", "AbortError")); return; }
+    const abort = () => { clearTimeout(timer); signal.removeEventListener("abort", abort); reject(new DOMException("Aborted", "AbortError")); };
+    const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, milliseconds);
+    signal.addEventListener("abort", abort, { once: true });
+  });
+}
+async function finishCat(signal) {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) { setCatState("idle"); return; }
+  await waitForCat(Math.max(0, 280 - (performance.now() - catStartedAt)), signal);
+  setCatState("spitting");
+  MediaI18n.text($("empty-title"), "พบสื่อแล้ว กำลังจัดให้คุณ…");
+  await waitForCat(620, signal);
+  setCatState("idle");
+}
+
 function error(message = "", field = false) {
   MediaI18n.text($("error-message"), message);
   urlInput.setAttribute("aria-invalid", String(field));
@@ -278,6 +307,7 @@ $("return-profile-picker").addEventListener("click", returnToProfile);
 urlInput.addEventListener("input", () => {
   if (picker.open) picker.close();
   revision++;
+  setCatState("idle");
   readAllPosts = false; profileLoading?.abort(); profileLoading = null; profileReturn = null;
   inspection?.abort(); inspection = null;
   media = null; inspectedUrl = ""; selected.clear();
@@ -299,6 +329,8 @@ form.addEventListener("submit", async (event) => {
   profileReturn = null; readAllPosts = false; profileLoading?.abort(); profileLoading = null;
   inspection = new AbortController();
   error(); busy(inspectButton, true);
+  $("empty-state").hidden = false; $("media-content").hidden = true;
+  setCatState("chewing");
   selectionState();
   $("media-section").setAttribute("aria-busy", "true");
   MediaI18n.text($("empty-title"), "กำลังตรวจสอบลิงก์…");
@@ -306,10 +338,14 @@ form.addEventListener("submit", async (event) => {
   try {
     const result = await api("/info", { method: "POST", body: JSON.stringify({ url }), signal: inspection.signal });
     if (revision !== current) return;
+    if (result.items?.length) await finishCat(inspection.signal);
+    else setCatState("idle");
+    if (revision !== current) return;
     inspectedUrl = result.url || url;
     renderMedia(result);
   } catch (issue) {
     if (revision !== current) return;
+    setCatState("idle");
     media = null; selected.clear();
     $("media-content").hidden = true; $("empty-state").hidden = false;
     error(issue.message, true);

@@ -223,3 +223,23 @@ progress::-webkit-progress-value { background: repeating-linear-gradient(90deg, 
 .quality-note { color: var(--picker-accent); font-size: 12px; margin: 0; padding: 0 8px 8px; }
 .audio-choice { display: flex; align-items: center; padding: 6px 8px 10px; font-size: 12px; min-height: 44px; color: var(--picker-muted); }
 .audio-choice input { width: 17px; height: 17px; }
+
+.cat-scene { position: relative; width: 184px; height: 120px; flex: 0 0 auto; margin: 2px 0 12px; }
+.cat-scene .empty-cat { display: block; margin: 0; width: 100%; height: 100%; }
+.cat-output { position: absolute; left: 58%; top: 46%; width: 24px; height: 24px; opacity: 0; pointer-events: none; shape-rendering: crispEdges; }
+.cat-scene[data-state="spitting"] .cat-photo { animation: cat-spit-photo 620ms steps(6, end) both; }
+.cat-scene[data-state="spitting"] .cat-video { animation: cat-spit-video 620ms steps(6, end) both; }
+.cat-scene[data-state="spitting"] .empty-cat { animation: cat-pop 300ms steps(3, end); }
+@keyframes cat-spit-photo { 0% { opacity: 0; transform: translate(0, 0) scale(.4); } 20% { opacity: 1; } 75% { opacity: 1; } 100% { opacity: 0; transform: translate(52px, -28px) rotate(12deg); } }
+@keyframes cat-spit-video { 0%, 10% { opacity: 0; transform: translate(0, 0) scale(.4); } 30% { opacity: 1; } 75% { opacity: 1; } 100% { opacity: 0; transform: translate(42px, 22px) rotate(-8deg); } }
+@keyframes cat-pop { 0%, 100% { transform: translate(0, 0); } 40% { transform: translate(-3px, 0); } 70% { transform: translate(1px, -2px); } }
+@media (max-width: 640px) { .cat-scene { width: 160px; height: 104px; } }
+@media (prefers-reduced-motion: reduce) { .cat-output { display: none; } }
+
+.cat-chew { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; image-rendering: pixelated; }
+.cat-scene[data-state="chewing"][data-ready="true"] .empty-cat { opacity: 0; }
+.cat-scene[data-state="chewing"][data-ready="true"] .cat-chew-closed { animation: cat-chew-closed 440ms steps(1, end) infinite; }
+.cat-scene[data-state="chewing"][data-ready="true"] .cat-chew-open { animation: cat-chew-open 440ms steps(1, end) infinite; }
+@keyframes cat-chew-closed { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes cat-chew-open { 0%, 49% { opacity: 0; } 50%, 100% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .cat-chew { display: none; } .cat-scene[data-state="chewing"] .empty-cat { opacity: 1 !important; } }

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title data-i18n>Media Downloader — ดาวน์โหลดวิดีโอและรูปภาพ</title>
-  <link rel="icon" href="/assets/cat.svg?v=2" type="image/svg+xml">
+  <link rel="icon" href="/assets/cat.svg?v=3" type="image/svg+xml">
   <link rel="stylesheet" href="/assets/styles.css">
   <script src="/assets/i18n.js" defer></script>
   <script src="/assets/app.js" defer></script>
@@ -13,7 +13,7 @@
 <body>
   <main class="page">
     <header class="brand">
-      <img class="brand-mark" src="/assets/cat.svg?v=2" width="88" height="64" alt="">
+      <img class="brand-mark" src="/assets/cat.svg?v=3" width="88" height="64" alt="">
       <div class="brand-copy"><h1>Media Downloader</h1><p data-i18n>บันทึกวิดีโอและรูปภาพจากลิงก์</p></div>
       <button id="language-toggle" class="language-switch" type="button" data-language-toggle disabled aria-label="Switch to English">EN</button>
     </header>
@@ -39,7 +39,13 @@
       <section id="media-section" aria-labelledby="media-heading" aria-busy="false">
         <div class="section-heading"><h2 id="media-heading" data-i18n>เลือกสื่อที่ต้องการ</h2><span id="selection-count" class="help"></span></div>
         <div id="empty-state" class="empty-state">
-          <img class="empty-cat" src="/assets/cat.svg?v=2" width="184" height="120" alt="">
+          <div id="cat-scene" class="cat-scene" data-state="idle" aria-hidden="true">
+            <img class="empty-cat" src="/assets/cat.svg?v=3" width="184" height="120" alt="">
+            <img class="cat-chew cat-chew-closed" src="/assets/cat.svg?v=3#chewing-closed" width="184" height="120" alt="">
+            <img class="cat-chew cat-chew-open" src="/assets/cat.svg?v=3#chewing-open" width="184" height="120" alt="">
+            <svg class="cat-output cat-photo" viewBox="0 0 24 24"><path fill="#edf1eb" d="M1 1h22v22H1z"/><path fill="#80d8ed" d="M4 4h16v16H4z"/><path fill="#f2cf7c" d="M15 6h3v3h-3z"/><path fill="#6fa18c" d="m4 18 6-8 4 5 3-3 3 6v2H4z"/></svg>
+            <svg class="cat-output cat-video" viewBox="0 0 24 24"><path fill="#edf1eb" d="M1 1h22v22H1z"/><path fill="#4987bb" d="M4 4h16v16H4z"/><path fill="#fff" d="M9 7v10h3v-2h3v-2h2v-2h-2V9h-3V7z"/></svg>
+          </div>
           <p id="empty-title" data-i18n>เริ่มจากวางลิงก์ที่คุณต้องการบันทึก</p>
           <p class="help" id="empty-detail" data-i18n>ตรวจสอบลิงก์เพื่อดูตัวอย่างและเลือกวิดีโอหรือรูปภาพ</p>
         </div>

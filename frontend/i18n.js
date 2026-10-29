@@ -2,6 +2,7 @@
 // UI copy uses canonical Thai sources. Only language preference is stored.
 window.MediaI18n = (() => {
   const dictionary = {
+  "พบสื่อแล้ว กำลังจัดให้คุณ…": "Media found. Getting it ready…",
   "เสียง MP3 · 192 kbps": "MP3 audio · 192 kbps",
   "คุณภาพสูงสุดจากต้นทาง": "Highest available quality",
   "เสียงอย่างเดียว MP3": "Audio only (MP3)",
