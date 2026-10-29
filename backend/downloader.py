@@ -4,7 +4,7 @@ import shutil
 import subprocess
 import zipfile
 import re
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qs, urlsplit, urlunsplit
 from functools import lru_cache
 import json
 
@@ -191,7 +191,7 @@ def make_ydl(options=None):
     from yt_dlp.extractor.facebook import FacebookIE
 
     class FacebookStoryIE(FacebookIE):
-        _VALID_URL = r"https?://(?:[\w-]+\.)?facebook\.com/stories/[0-9]+/(?P<id>[A-Za-z0-9_=-]+)/?"
+        _VALID_URL = r"https?://(?:[\w-]+\.)?facebook\.com/stories/(?:[0-9]+/)?(?P<id>[A-Za-z0-9_=-]+)/?(?:[?#]|$)"
 
         def _real_extract(self, url):
             from .facebook_story import video_page
@@ -204,7 +204,21 @@ def make_ydl(options=None):
             self._story_page = video_page(card)
             if not self._story_page:
                 raise MediaError("no_media", "Story นี้ไม่มีวิดีโอ")
-            return self._extract_from_url(url, self._match_id(url))
+            result = self._extract_from_url(url, self._match_id(url))
+            # Facebook identifies these as video, but some progressive MP4s omit
+            # both codecs and resolution. Keep them selectable without inventing dimensions.
+            for entry in result.get("entries") or [result]:
+                for fmt in entry.get("formats", []):
+                    if (
+                        urlsplit(fmt.get("url", "")).scheme in ("http", "https")
+                        and fmt.get("ext") in (None, "mp4")
+                        and fmt.get("vcodec") is None
+                        and fmt.get("acodec") is None
+                    ):
+                        fmt.update(vcodec="unknown", acodec="unknown")
+                        fmt.setdefault("protocol", urlsplit(fmt["url"]).scheme)
+                        fmt.setdefault("ext", "mp4")
+            return result
 
         def _download_webpage(self, url, *args, **kwargs):
             if url == getattr(self, "_story_url", None):
@@ -360,6 +374,10 @@ def quality_options(formats):
         }
     )
     options = [{"id": f"{height}p", "label": f"{height}p"} for height in heights]
+    if not heights and any(
+        allowed_format(f) and f.get("vcodec") not in (None, "none") for f in formats
+    ):
+        options.append({"id": "best", "label": "คุณภาพสูงสุดจากต้นทาง"})
     if any(allowed_format(f) and f.get("acodec") not in (None, "none") for f in formats):
         options.append({"id": "mp3", "label": "เสียงอย่างเดียว MP3"})
     return options
@@ -730,7 +748,15 @@ def normalize_post_url(url):
 
         return normalize_url(url)
     if facebook_story(url):
-        return "https://www.facebook.com" + parts.path
+        return (
+            "https://www.facebook.com"
+            + parts.path
+            + (
+                "?source=profile_highlight"
+                if parse_qs(parts.query).get("source") == ["profile_highlight"]
+                else ""
+            )
+        )
     shortcode = instagram_shortcode(url)
     if shortcode:
         return f"https://www.instagram.com/p/{shortcode}/"
@@ -745,29 +771,37 @@ def facebook_story(url):
     parts = urlsplit(url)
     host = parts.hostname or ""
     return (host == "facebook.com" or host.endswith(".facebook.com")) and bool(
-        re.fullmatch(r"/stories/[0-9]+/[A-Za-z0-9_=-]+/?", parts.path)
+        re.fullmatch(r"/stories/[0-9]+(?:/[A-Za-z0-9_=-]+)?/?", parts.path)
     )
 
 
 @lru_cache(maxsize=2)
 def facebook_story_data(url, *, use_cookies):
-    from .facebook_story import find_card, media_items, protected_media
+    from .facebook_story import find_cards, media_items, protected_media
 
     identifier = urlsplit(url).path.strip("/").split("/")[-1]
     with make_ydl(ydl_options(use_cookies=use_cookies)) as ydl:
         authenticated = has_login_session(ydl.cookiejar, url)
         page = ydl.get_info_extractor("Facebook")._download_webpage(url, identifier)
         try:
-            card = find_card(page, identifier)
+            cards = find_cards(
+                page, identifier, bucket=len(urlsplit(url).path.strip("/").split("/")) == 2
+            )
         except ValueError:
             raise MediaError("metadata_limit", "ข้อมูล Story มีขนาดใหญ่เกินกำหนด") from None
-        if not card:
+        if not cards:
             if not authenticated:
                 raise MediaError("login_required", "Facebook Story ต้องใช้ session ของบัญชีที่มีสิทธิ์ดู")
             raise MediaError(
                 "story_unavailable", "ไม่พบ Facebook Story นี้ อาจหมดอายุ ถูกลบ หรือบัญชีไม่มีสิทธิ์ดู"
             )
-        assert_media_access(card, use_cookies=use_cookies, authenticated=authenticated)
+        for entry in cards:
+            assert_media_access(entry, use_cookies=use_cookies, authenticated=authenticated)
+            reject_unsupported_media(entry)
+        card = {
+            "id": identifier,
+            "attachments": [attachment for entry in cards for attachment in entry["attachments"]],
+        }
         media = media_items(card)
         if len(media) > settings.max_items:
             raise MediaError("item_limit", "Story มีสื่อเกินจำนวนที่กำหนด")
@@ -1197,6 +1231,7 @@ def select_video_formats(formats, quality="best"):
                 f.get("width") or 0,
                 f.get("fps") or 0,
                 f.get("tbr") or 0,
+                f.get("quality") if f.get("quality") is not None else float("-inf"),
             ),
         )
     ]

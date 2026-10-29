@@ -7,7 +7,7 @@ import requests
 
 from backend import downloader
 from backend.downloader import MediaError
-from backend.facebook_story import find_card, media_items, protected_media, video_page
+from backend.facebook_story import find_card, find_cards, media_items, protected_media, video_page
 
 
 URL = "https://www.facebook.com/stories/123/FixtureStory=/"
@@ -47,7 +47,14 @@ class FacebookStoryTests(unittest.TestCase):
         self.assertFalse(
             downloader.facebook_story(URL.replace("facebook.com", "facebook.com.evil.test"))
         )
-        self.assertFalse(downloader.facebook_story("https://facebook.com/stories/123/"))
+        self.assertTrue(downloader.facebook_story("https://facebook.com/stories/123/"))
+        self.assertEqual(
+            downloader.normalize_post_url(
+                "https://m.facebook.com/stories/123/?source=profile_highlight&tracking=ignored"
+            ),
+            "https://www.facebook.com/stories/123/?source=profile_highlight",
+        )
+        self.assertFalse(downloader.facebook_story("https://facebook.com/stories/not-a-bucket/"))
         self.assertEqual(
             downloader.normalize_post_url(URL.replace("www.", "m.") + "?source=fixture"), URL
         )
@@ -60,6 +67,76 @@ class FacebookStoryTests(unittest.TestCase):
         self.assertEqual(find_card(page, "FixtureStory="), target)
         self.assertIsNone(find_card(page, "MissingStory="))
         self.assertEqual(len(media_items(target)), 1)
+
+    def test_bucket_resolves_only_its_cards_in_order_and_prefers_full_duplicates(self):
+        target = {
+            "id": "123",
+            "unified_stories": {"edges": [{"node": {"id": key}} for key in ("Second", "First")]},
+        }
+        page = page_fixture(
+            target,
+            {
+                "id": "999",
+                "unified_stories_with_notes": {"edges": [{"node": card_fixture("Unrelated")}]},
+            },
+            {"id": "First", "attachments": []},
+            card_fixture("First", photo=True),
+            card_fixture("Second"),
+        )
+        cards = find_cards(page, "123", bucket=True)
+        self.assertEqual([card["id"] for card in cards], ["Second", "First"])
+        self.assertEqual(len(media_items(cards[1])), 1)
+        self.assertEqual(find_cards(page, "Missing", bucket=True), [])
+
+    def test_bucket_download_adapter_merges_photos_and_videos_without_other_buckets(self):
+        url = "https://www.facebook.com/stories/123/?source=profile_highlight"
+        bucket = {
+            "id": "123",
+            "unified_stories_with_notes": {
+                "edges": [{"node": card_fixture("V")}, {"node": card_fixture("P", photo=True)}]
+            },
+        }
+        with patch.object(
+            downloader,
+            "make_ydl",
+            return_value=self.mock_ydl(page_fixture(bucket, card_fixture("Other")), True),
+        ):
+            card, _ = downloader.facebook_story_data(url, use_cookies=True)
+        self.assertEqual([media["__typename"] for media in media_items(card)], ["Video", "Photo"])
+        with (
+            patch.object(
+                downloader,
+                "facebook_story_data",
+                return_value=(card, requests.cookies.RequestsCookieJar()),
+            ),
+            downloader.make_ydl(downloader.ydl_options(use_cookies=False)) as ydl,
+        ):
+            result = ydl.get_info_extractor("FacebookStory")._real_extract(url)
+        self.assertEqual(result["id"], "456")
+        fmt = result["formats"][0]
+        self.assertEqual(downloader.quality_options([fmt])[0]["id"], "best")
+        self.assertEqual(
+            downloader.select_video_formats([dict(fmt, quality=-3), dict(fmt, quality=-2)])[0][
+                "quality"
+            ],
+            -2,
+        )
+
+    def test_bucket_still_checks_access_and_drm_on_each_card(self):
+        url = "https://www.facebook.com/stories/123/"
+        for protected in (
+            dict(card_fixture("V"), availability="private"),
+            {"id": "V", "attachments": [{"media": {"__typename": "Video", "has_drm": True}}]},
+        ):
+            downloader.facebook_story_data.cache_clear()
+            bucket = {"id": "123", "unified_stories_with_notes": {"edges": [{"node": protected}]}}
+            with (
+                patch.object(
+                    downloader, "make_ydl", return_value=self.mock_ydl(page_fixture(bucket))
+                ),
+                self.assertRaises(MediaError),
+            ):
+                downloader.facebook_story_data(url, use_cookies=False)
 
     def test_oversized_or_invalid_metadata_is_not_used(self):
         with self.assertRaises(ValueError):

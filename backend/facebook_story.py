@@ -1,13 +1,14 @@
-"""Select a Facebook Story by its exact ID before passing video data to yt-dlp."""
+"""Select exact Facebook Story cards or one requested bucket for yt-dlp."""
 
 import json
 import re
 
 
-def find_card(page, identifier):
+def find_cards(page, identifier, *, bucket=False):
+    """Resolve exact card IDs, or only cards belonging to the requested bucket."""
     if len(page.encode("utf-8")) > 8 * 1024 * 1024:
         raise ValueError("metadata_limit")
-    best, score = None, -1
+    nodes = []
     for raw in re.findall(r'<script[^>]*type="application/json"[^>]*>(.*?)</script>', page, re.S):
         try:
             stack = [json.loads(raw)]
@@ -16,15 +17,42 @@ def find_card(page, identifier):
         while stack:
             node = stack.pop()
             if isinstance(node, dict):
-                if node.get("id") == identifier and isinstance(node.get("attachments"), list):
-                    media = media_items(node)
-                    detail = len(json.dumps(media)) if media else -1
-                    if detail > score:
-                        best, score = node, detail
-                stack.extend(node.values())
+                nodes.append(node)
+                stack.extend(reversed(list(node.values())))
             elif isinstance(node, list):
                 stack.extend(reversed(node))
-    return best
+    wanted = dict.fromkeys([identifier] if not bucket else [])
+    if bucket:
+        for node in nodes:
+            if node.get("id") != identifier:
+                continue
+            for key in ("unified_stories", "unified_stories_with_notes"):
+                connection = node.get(key)
+                if not isinstance(connection, dict):
+                    continue
+                for edge in connection.get("edges", []):
+                    card = edge.get("node") if isinstance(edge, dict) else None
+                    if isinstance(card, dict) and isinstance(card.get("id"), str):
+                        wanted.setdefault(card["id"], None)
+    best = {}
+    for node in nodes:
+        card_id = node.get("id")
+        if (
+            not isinstance(card_id, str)
+            or card_id not in wanted
+            or not isinstance(node.get("attachments"), list)
+        ):
+            continue
+        media = media_items(node)
+        score = len(json.dumps(media)) if media else -1
+        if card_id not in best or score > best[card_id][0]:
+            best[card_id] = (score, node)
+    return [best[key][1] for key in wanted if key in best and best[key][0] >= 0]
+
+
+def find_card(page, identifier):
+    cards = find_cards(page, identifier)
+    return cards[0] if cards else None
 
 
 def media_items(card):

@@ -174,6 +174,10 @@ Facebook Story แบบ `/stories/OWNER_ID/STORY_ID/` อ่านข้อม�
 โดยเลือกเฉพาะ Story ID ในลิงก์ เพื่อไม่หยิบสื่อจาก Story อื่นในถาดมาดาวน์โหลด
 ใช้ session Chrome ของบัญชีที่มีสิทธิ์ดูเมื่อจำเป็น และใช้ parser ของ yt-dlp สำหรับวิดีโอ
 ตัว parser แยกรูปจาก attachment แบบ Photo; การรองรับรูปทดสอบด้วย fixture
+รองรับลิงก์ชุด Story/Highlights แบบ `/stories/BUCKET_ID/?source=profile_highlight`
+โดยอ่านเฉพาะ card ที่เป็นสมาชิกของ BUCKET_ID นั้น รวมวิดีโอและรูปที่ Facebook ส่งมาในหน้า
+ไม่ดึง Story ของบัญชีอื่นจากถาดข้างเคียง และไม่ไล่หน้าถัดไปของชุดที่ Facebook ส่งมาไม่ครบ
+วิดีโอที่ไม่ระบุความละเอียดเลือกคุณภาพดีที่สุดตามลำดับ format ของต้นทาง โดยไม่ตั้งค่า resolution ขึ้นเอง
 ยังไม่รองรับการไล่โหลด Facebook Story ทั้งถาดหรือ Story ที่หมดอายุ/เข้าไม่ถึง
 สื่อที่มี license/ธง DRM จะถูกปฏิเสธ ส่วน certificate ทั่วไปอย่างเดียวไม่ถือว่าเข้ารหัส
 Docker ไม่มี profile browser ของ host และคู่มือนี้ไม่แนะนำให้ mount profile เข้า container
