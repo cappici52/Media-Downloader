@@ -112,6 +112,38 @@ class APITests(unittest.TestCase):
         self.assertTrue(body["thumbnail"].startswith("/thumbnails/"))
         self.assertNotIn("cdn.example", response.text)
 
+    def test_thumbnail_cache_reuses_sources_across_tickets_outside_download_slots(self):
+        with self.valid_dns():
+            first = self.client.post("/info", json={"url": "https://youtube.com"}).json()
+            second = self.client.post("/info", json={"url": "https://youtube.com"}).json()
+        self.assertEqual(first["thumbnail"], first["items"][0]["thumbnail"])
+        calls = []
+
+        async def image_worker(request, **kwargs):
+            calls.append(request["url"])
+            (Path(request["directory"]) / "thumbnail.jpg").write_bytes(b"verified-jpeg")
+            return {"filename": "thumbnail.jpg", "media_type": "image/jpeg"}
+
+        async def occupy():
+            await self.manager.slots.acquire()
+
+        async def release():
+            self.manager.slots.release()
+
+        self.client.portal.call(occupy)
+        try:
+            with patch.object(main.thumbnail_cache, "worker", image_worker):
+                for data in (first, second):
+                    response = self.client.get(data["thumbnail"])
+                    self.assertEqual(response.content, b"verified-jpeg")
+                    self.assertEqual(response.headers["cache-control"], "no-store")
+        finally:
+            self.client.portal.call(release)
+        self.assertEqual(len(calls), 1)
+        main.previews[first["thumbnail"].split("/")[2]]["expires"] = 0
+        self.assertEqual(self.client.get(first["thumbnail"]).status_code, 404)
+        self.assertFalse(list(self.manager.limits.root.iterdir()))
+
     def test_video_preview_uses_private_ticket_and_streams_a_range(self):
         from types import SimpleNamespace
 

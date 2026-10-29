@@ -126,7 +126,7 @@ class BrowserSessionTests(unittest.IsolatedAsyncioTestCase):
 class SessionAPITests(unittest.TestCase):
     def test_status_contains_no_cookie_values_and_refresh_rejects_uploads(self):
         cache = BrowserSession("chrome", loader=Mock(return_value=sample_jar()))
-        manager = Mock(start=AsyncMock(), close=AsyncMock())
+        manager = Mock(start=AsyncMock(), close=AsyncMock(), limits=main.settings)
         with (
             patch.object(main, "browser_session", cache),
             patch.object(main, "manager", manager),

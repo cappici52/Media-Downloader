@@ -4,7 +4,6 @@ from contextlib import asynccontextmanager
 import asyncio
 import copy
 from pathlib import Path
-import shutil
 import time
 from uuid import uuid4
 from typing import Literal
@@ -22,11 +21,12 @@ from .settings import settings
 from .validators import URLValidationError, validate_url
 from .streaming import PreviewStream, PreviewResponse
 from .browser_session import browser_session
+from .thumbnails import ThumbnailCache
 
 
 manager = JobManager()
 previews = {}
-thumbnail_pending = 0
+thumbnail_cache = None
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -46,11 +46,15 @@ class ClosingFileResponse(FileResponse):
 
 @asynccontextmanager
 async def lifespan(app):
+    global thumbnail_cache
     await manager.start()
+    thumbnail_cache = ThumbnailCache(manager.limits, run_worker)
     await browser_session.refresh()
     try:
         yield
     finally:
+        await thumbnail_cache.close()
+        thumbnail_cache = None
         await manager.close()
         previews.clear()
         browser_session.clear()
@@ -173,13 +177,16 @@ async def info(payload: InfoQuery):
         previews.pop(next(iter(previews)))
     identifier = uuid4().hex
     urls = []
+    url_indexes = {}
     streams = []
 
     def proxy_thumbnail(item):
         thumbnail = item.get("thumbnail")
         if isinstance(thumbnail, str) and thumbnail.startswith(("https://", "http://")):
-            urls.append(thumbnail)
-            item["thumbnail"] = f"/thumbnails/{identifier}/{len(urls) - 1}"
+            if thumbnail not in url_indexes:
+                url_indexes[thumbnail] = len(urls)
+                urls.append(thumbnail)
+            item["thumbnail"] = f"/thumbnails/{identifier}/{url_indexes[thumbnail]}"
         else:
             item["thumbnail"] = None
 
@@ -248,36 +255,12 @@ async def file_download(identifier: str):
 
 @app.get("/thumbnails/{identifier}/{index}")
 async def thumbnail(identifier: str, index: int):
-    global thumbnail_pending
     prune_previews()
     entry = previews.get(identifier)
     if entry is None or not 0 <= index < len(entry["urls"]):
         return error_response("preview_expired", "ตัวอย่างรูปหมดอายุแล้ว", 404)
-    if thumbnail_pending >= settings.max_items:
-        return error_response("busy", "ระบบกำลังทำงานเต็มจำนวน", 429)
-    directory = settings.root / uuid4().hex
-    thumbnail_pending += 1
-    try:
-        async with asyncio.timeout(60):
-            async with manager.slots:
-                directory.mkdir()
-                result = await run_worker(
-                    {"action": "preview", "url": entry["urls"][index], "directory": str(directory)},
-                    timeout=30,
-                )
-        return ClosingFileResponse(
-            directory / result["filename"],
-            media_type=result["media_type"],
-            on_close=lambda: shutil.rmtree(directory, True),
-        )
-    except TimeoutError:
-        await asyncio.to_thread(shutil.rmtree, directory, True)
-        raise MediaError("busy", "ระบบกำลังทำงานเต็มจำนวน กรุณาเปิดตัวอย่างอีกครั้ง") from None
-    except BaseException:
-        await asyncio.to_thread(shutil.rmtree, directory, True)
-        raise
-    finally:
-        thumbnail_pending -= 1
+    data, media_type = await thumbnail_cache.get(entry["urls"][index])
+    return Response(content=data, media_type=media_type)
 
 
 async def prepared_preview(descriptor, request):
