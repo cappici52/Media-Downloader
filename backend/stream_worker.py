@@ -29,7 +29,7 @@ def bounded_range(value):
         return f"bytes=-{min(int(right), CHUNK_LIMIT)}"
     start = int(left)
     end = min(int(right), start + CHUNK_LIMIT - 1) if right else start + CHUNK_LIMIT - 1
-    if end < start or start >= settings.max_bytes:
+    if end < start or start >= settings.max_preview_bytes:
         raise MediaError("invalid_range", "ช่วงข้อมูลวิดีโอไม่ถูกต้อง")
     return f"bytes={start}-{end}"
 
@@ -76,9 +76,11 @@ def stream(request, output, on_headers=None):
                 if (
                     not match
                     or int(match[2]) - int(match[1]) + 1 != length
-                    or not int(match[1]) <= int(match[2]) < int(match[3]) <= settings.max_bytes
+                    or not int(match[1]) <= int(match[2]) < int(match[3])
                 ):
-                    raise MediaError("preview_range", "ข้อมูลช่วงวิดีโอไม่ถูกต้องหรือไฟล์ใหญ่เกินกำหนด")
+                    raise MediaError("preview_range", "ข้อมูลช่วงวิดีโอจากต้นทางไม่ถูกต้อง")
+                if int(match[3]) > settings.max_preview_bytes:
+                    raise MediaError("preview_size_limit", "ไฟล์ต้นทางใหญ่เกินขีดจำกัดพรีวิว")
                 forwarded["Content-Range"] = content_range
             elif response.status_code != 200 or headers["Range"].split("=")[1].split("-")[0] != "0":
                 raise MediaError("preview_range", "คลิปนี้ไม่รองรับการเลื่อนตำแหน่งตัวอย่าง")

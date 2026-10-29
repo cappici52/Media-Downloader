@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import replace
 import io
 import json
 from pathlib import Path
@@ -10,6 +11,7 @@ from PIL import Image
 from backend.downloader import MediaError, download_preview, video_preview
 from backend.stream_worker import CHUNK_LIMIT, bounded_range, stream
 from backend.streaming import PreviewStream
+from backend import stream_worker
 
 
 class PreviewTests(unittest.TestCase):
@@ -98,6 +100,65 @@ class PreviewTests(unittest.TestCase):
         self.assertEqual(json.loads(header)["status"], 206)
         self.assertEqual(body, b"clip")
         self.assertNotIn("Cookie", session.get.call_args.kwargs["headers"])
+
+    def test_large_source_streams_bounded_ranges_past_download_limit(self):
+        total = 1_486_526_872
+        start = 900_000_000
+        limits = replace(
+            stream_worker.settings,
+            max_bytes=500 * 1024 * 1024,
+            max_preview_bytes=2 * 1024 * 1024 * 1024,
+        )
+        session, _ = self.mock_session(
+            b"clip", {"Content-Length": "4", "Content-Range": f"bytes {start}-{start + 3}/{total}"}
+        )
+        output = io.BytesIO()
+        with (
+            patch.object(stream_worker, "settings", limits),
+            patch("requests.Session", return_value=session),
+            patch("backend.stream_worker.validate_network_url"),
+        ):
+            self.assertEqual(
+                bounded_range(f"bytes={start}-"), f"bytes={start}-{start + CHUNK_LIMIT - 1}"
+            )
+            stream(
+                {
+                    "descriptor": {
+                        "url": "https://cdn.example/large.mp4",
+                        "media_type": "video/mp4",
+                    },
+                    "range": f"bytes={start}-{start + 3}",
+                },
+                output,
+            )
+        header, body = output.getvalue().split(b"\n", 1)
+        self.assertEqual(json.loads(header)["status"], 206)
+        self.assertEqual(body, b"clip")
+        self.assertEqual(limits.max_bytes, 500 * 1024 * 1024)
+
+    def test_preview_limit_and_invalid_range_have_distinct_errors(self):
+        for total, interval, code in (
+            (stream_worker.settings.max_preview_bytes + 1, "10-13", "preview_size_limit"),
+            (100, "10-20", "preview_range"),
+        ):
+            session, _ = self.mock_session(
+                b"clip", {"Content-Length": "4", "Content-Range": f"bytes {interval}/{total}"}
+            )
+            with (
+                patch("requests.Session", return_value=session),
+                patch("backend.stream_worker.validate_network_url"),
+                self.assertRaises(MediaError) as error,
+            ):
+                stream(
+                    {
+                        "descriptor": {
+                            "url": "https://cdn.example/video.mp4",
+                            "media_type": "video/mp4",
+                        }
+                    },
+                    io.BytesIO(),
+                )
+            self.assertEqual(error.exception.code, code)
 
     def test_stream_rejects_ignored_ranges_and_oversized_responses(self):
         descriptor = {"url": "https://cdn.example/video.mp4", "media_type": "video/mp4"}

@@ -6,7 +6,7 @@ const selected = new Map();
 let profileLoading = null, readAllPosts = false, profileReturn = null;
 const numbers = new Intl.NumberFormat("th-TH", { maximumFractionDigits: 0 });
 const picker = $("media-picker");
-let pickerTrigger = null, viewerTrigger = null, viewerRevision = 0;
+let pickerTrigger = null, viewerTrigger = null, viewerRevision = 0, previewDiagnosis = null;
 
 function prepareCatFrame(image) {
   return new Promise(resolve => {
@@ -121,12 +121,33 @@ function selectionState() {
 
 function closeViewer(restore = true) {
   viewerRevision++;
+  previewDiagnosis?.abort(); previewDiagnosis = null;
   const video = $("viewer-video");
+  video.onerror = null; video.onplaying = null;
   video.pause(); video.removeAttribute("src"); video.load(); video.hidden = true;
   $("viewer-image").removeAttribute("src"); $("viewer-image").hidden = true;
   $("media-viewer").hidden = true;
   if (restore && viewerTrigger?.isConnected) viewerTrigger.focus();
 }
+async function diagnosePreview(item, mediaErrorCode, currentViewer) {
+  const controller = new AbortController();
+  previewDiagnosis?.abort(); previewDiagnosis = controller;
+  const timer = setTimeout(() => controller.abort(), 10000);
+  try {
+    // A bounded GET can return the API's JSON error; a video element hides it.
+    const response = await fetch(item.preview_url, { headers: { Range: "bytes=0-0" }, signal: controller.signal });
+    let message;
+    if (!response.ok) {
+      const problem = await response.json();
+      if (typeof problem.error?.message === "string") message = problem.error.message;
+    } else if (mediaErrorCode === 3 || mediaErrorCode === 4) {
+      message = "เบราว์เซอร์เล่น codec ของคลิปนี้ไม่ได้ ลองดาวน์โหลดไฟล์เพื่อเปิดด้วยโปรแกรมที่รองรับ";
+    }
+    if (message && currentViewer === viewerRevision && !controller.signal.aborted) MediaI18n.text($("viewer-error"), message);
+  } catch { /* Keep the original viewer error on disconnect or an expired ticket. */ }
+  finally { clearTimeout(timer); if (previewDiagnosis === controller) previewDiagnosis = null; }
+}
+
 function openViewer(item, index, trigger) {
   closeViewer(false); viewerTrigger = trigger;
   const currentViewer = viewerRevision;
@@ -142,7 +163,7 @@ function openViewer(item, index, trigger) {
       video.poster = item.thumbnail || ""; video.src = item.preview_url;
       MediaI18n.text($("viewer-status"), item.preview_preparing ? "กำลังเตรียมพรีวิวคุณภาพสูงสุดและรวมเสียง อาจใช้เวลาสักครู่…" : "กำลังเปิดตัวอย่างคลิป…");
       video.onplaying = () => { if (currentViewer === viewerRevision) MediaI18n.text($("viewer-status"), item.preview_muted ? "ตัวอย่างนี้ไม่มีเสียง ไฟล์ดาวน์โหลดจะรวมเสียงตามต้นทาง" : "พรีวิวคุณภาพสูงสุดจากต้นทาง"); };
-      video.onerror = () => { if (currentViewer === viewerRevision) { MediaI18n.text($("viewer-status"), ""); MediaI18n.text($("viewer-error"), "เล่นตัวอย่างไม่ได้ ลิงก์อาจหมดอายุหรือรูปแบบไม่รองรับ ลองตรวจสอบโพสต์ใหม่ หรือเลือกดาวน์โหลดไฟล์"); } };
+      video.onerror = () => { if (currentViewer === viewerRevision) { MediaI18n.text($("viewer-status"), ""); MediaI18n.text($("viewer-error"), "เล่นตัวอย่างไม่ได้ ลิงก์อาจหมดอายุหรือรูปแบบไม่รองรับ ลองตรวจสอบโพสต์ใหม่ หรือเลือกดาวน์โหลดไฟล์"); diagnosePreview(item, video.error?.code, currentViewer); } };
       video.play().catch(() => { if (currentViewer === viewerRevision && !video.error) MediaI18n.text($("viewer-status"), "กดปุ่มเล่นบนคลิปเพื่อเริ่มดูตัวอย่าง"); });
     }
   } else {

@@ -13,6 +13,61 @@ import unittest
 
 @unittest.skipUnless(os.getenv("MEDIA_UI_URL"), "Set MEDIA_UI_URL for opt-in browser QA")
 class PixelUITests(unittest.TestCase):
+    def test_preview_reports_specific_api_errors_in_both_languages(self):
+        from playwright.sync_api import sync_playwright, expect
+
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True, channel="chrome")
+            page = browser.new_page()
+            info = {
+                "type": "video",
+                "title": "Preview error fixture",
+                "thumbnail": None,
+                "items": [
+                    {
+                        "id": "video-0",
+                        "type": "video",
+                        "qualities": [],
+                        "preview_url": "/streams/error-fixture/0",
+                    }
+                ],
+                "limits": {
+                    "max_items": 100,
+                    "max_file_mb": 500,
+                    "max_duration_seconds": 0,
+                    "ttl_seconds": 3600,
+                },
+            }
+            page.route("**/info", lambda route: route.fulfill(json=info))
+            ranges = []
+
+            def fail_stream(route):
+                ranges.append(route.request.headers.get("range"))
+                route.fulfill(
+                    status=502,
+                    json={
+                        "error": {
+                            "code": "preview_size_limit",
+                            "message": "ไฟล์ต้นทางใหญ่เกินขีดจำกัดพรีวิว",
+                        }
+                    },
+                )
+
+            page.route("**/streams/error-fixture/0", fail_stream)
+            page.goto(os.environ["MEDIA_UI_URL"])
+            page.locator("#url").fill("https://youtube.com/watch?v=fixture")
+            page.locator("#inspect").click()
+            page.locator(".tile-preview").click()
+            expect(page.locator("#viewer-error")).to_have_text("ไฟล์ต้นทางใหญ่เกินขีดจำกัดพรีวิว")
+            self.assertIn("bytes=0-0", ranges)
+            page.locator(".picker-header [data-language-toggle]").click()
+            expect(page.locator("#viewer-error")).to_have_text(
+                "The source file exceeds the preview size limit."
+            )
+            page.locator("#close-viewer").click()
+            expect(page.locator("#media-viewer")).to_be_hidden()
+            browser.close()
+
     def test_language_state_and_pixel_workflows(self):
         from playwright.sync_api import sync_playwright, expect
 

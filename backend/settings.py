@@ -22,6 +22,7 @@ def duration_limit():
 @dataclass(frozen=True)
 class Settings:
     max_bytes: int = positive("MAX_FILE_MB", 500) * 1024 * 1024
+    max_preview_bytes: int = positive("MAX_PREVIEW_FILE_MB", 8192) * 1024 * 1024
     max_duration: int = duration_limit()
     max_items: int = positive("MAX_ITEMS", 100)
     workers: int = positive("MAX_CONCURRENT_JOBS", 2)

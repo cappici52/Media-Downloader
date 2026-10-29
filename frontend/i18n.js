@@ -2,6 +2,9 @@
 // UI copy uses canonical Thai sources. Only language preference is stored.
 window.MediaI18n = (() => {
   const dictionary = {
+  "เบราว์เซอร์เล่น codec ของคลิปนี้ไม่ได้ ลองดาวน์โหลดไฟล์เพื่อเปิดด้วยโปรแกรมที่รองรับ": "Your browser cannot play this video codec. Download the file and open it with a compatible player.",
+  "ข้อมูลช่วงวิดีโอจากต้นทางไม่ถูกต้อง": "The source returned invalid video range data.",
+  "ไฟล์ต้นทางใหญ่เกินขีดจำกัดพรีวิว": "The source file exceeds the preview size limit.",
   "เตรียมพรีวิวนานเกินกำหนด กรุณาลองใหม่": "Preview preparation timed out. Please try again.",
   "กำลังเตรียมพรีวิวคุณภาพสูงสุดและรวมเสียง อาจใช้เวลาสักครู่…": "Preparing the highest-quality preview and combining audio. This may take a moment…",
   "พรีวิวคุณภาพสูงสุดจากต้นทาง": "Highest available source quality preview",
