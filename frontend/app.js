@@ -9,7 +9,7 @@ const picker = $("media-picker");
 let pickerTrigger = null, viewerTrigger = null, viewerRevision = 0;
 
 function error(message = "", field = false) {
-  $("error-message").textContent = message;
+  MediaI18n.text($("error-message"), message);
   urlInput.setAttribute("aria-invalid", String(field));
   if (field) urlInput.focus();
 }
@@ -22,11 +22,11 @@ function step(index) {
 function busy(button, value) { button.disabled = value; button.setAttribute("aria-busy", String(value)); }
 function selectionState() {
   const count = [...selected.values()].filter(Boolean).length;
-  $("selection-count").textContent = media ? `เลือก ${numbers.format(count)} / ${numbers.format(media.items.length)} ${media.type === "profile" ? "โพสต์" : "รายการ"}` : "";
+  MediaI18n.text($("selection-count"), media ? `เลือก ${numbers.format(count)} / ${numbers.format(media.items.length)} ${media.type === "profile" ? "โพสต์" : "รายการ"}` : "");
   const mediaCount = media?.type === "profile" ? media.items.filter((item) => selected.get(item.id)).reduce((total, item) => total + (item.media_count || 1), 0) : count;
-  if (media?.type === "profile") $("selection-count").textContent += ` · รวม ${numbers.format(mediaCount)} สื่อ`;
-  if (mediaCount > (media?.limits?.max_items || 100)) $("selection-count").textContent += " · เกินขีดจำกัด กรุณาแบ่งเป็นชุด";
-  $("picker-count").textContent = $("selection-count").textContent;
+  if (media?.type === "profile") MediaI18n.append($("selection-count"), ` · รวม ${numbers.format(mediaCount)} สื่อ`);
+  if (mediaCount > (media?.limits?.max_items || 100)) MediaI18n.append($("selection-count"), " · เกินขีดจำกัด กรุณาแบ่งเป็นชุด");
+  MediaI18n.text($("picker-count"), MediaI18n.original($("selection-count")));
   $("select-all").checked = !!media && count === media.items.length;
   $("select-all").indeterminate = !!media && count > 0 && count < media.items.length;
   downloadButton.disabled = !count || !!activeJob || submitting || !!inspection || !!profileLoading || mediaCount > (media?.limits?.max_items || 100);
@@ -54,25 +54,25 @@ function openViewer(item, index, trigger) {
   closeViewer(false); viewerTrigger = trigger;
   const currentViewer = viewerRevision;
   const isVideo = item.type === "video";
-  $("viewer-title").textContent = `${isVideo ? "วิดีโอ" : "รูปภาพ"} ${index + 1}`;
-  $("viewer-status").textContent = ""; $("viewer-error").textContent = "";
+  MediaI18n.text($("viewer-title"), `${isVideo ? "วิดีโอ" : "รูปภาพ"} ${index + 1}`);
+  MediaI18n.text($("viewer-status"), ""); MediaI18n.text($("viewer-error"), "");
   $("media-viewer").hidden = false;
   if (isVideo) {
     if (!item.preview_url?.startsWith("/streams/")) {
-      $("viewer-error").textContent = "คลิปนี้ไม่มีรูปแบบตัวอย่างที่เบราว์เซอร์เล่นได้ คุณยังเลือกดาวน์โหลดไฟล์ได้";
+      MediaI18n.text($("viewer-error"), "คลิปนี้ไม่มีรูปแบบตัวอย่างที่เบราว์เซอร์เล่นได้ คุณยังเลือกดาวน์โหลดไฟล์ได้");
     } else {
       const video = $("viewer-video"); video.hidden = false;
       video.poster = item.thumbnail || ""; video.src = item.preview_url;
-      $("viewer-status").textContent = "กำลังเปิดตัวอย่างคลิป…";
-      video.onplaying = () => { if (currentViewer === viewerRevision) $("viewer-status").textContent = item.preview_muted ? "ตัวอย่างนี้ไม่มีเสียง ไฟล์ดาวน์โหลดจะรวมเสียงตามต้นทาง" : "กำลังเล่นตัวอย่าง · ยังไม่ได้สร้างงานดาวน์โหลด"; };
-      video.onerror = () => { if (currentViewer === viewerRevision) { $("viewer-status").textContent = ""; $("viewer-error").textContent = "เล่นตัวอย่างไม่ได้ ลิงก์อาจหมดอายุหรือรูปแบบไม่รองรับ ลองตรวจสอบโพสต์ใหม่ หรือเลือกดาวน์โหลดไฟล์"; } };
-      video.play().catch(() => { if (currentViewer === viewerRevision && !video.error) $("viewer-status").textContent = "กดปุ่มเล่นบนคลิปเพื่อเริ่มดูตัวอย่าง"; });
+      MediaI18n.text($("viewer-status"), "กำลังเปิดตัวอย่างคลิป…");
+      video.onplaying = () => { if (currentViewer === viewerRevision) MediaI18n.text($("viewer-status"), item.preview_muted ? "ตัวอย่างนี้ไม่มีเสียง ไฟล์ดาวน์โหลดจะรวมเสียงตามต้นทาง" : "กำลังเล่นตัวอย่าง · ยังไม่ได้สร้างงานดาวน์โหลด"); };
+      video.onerror = () => { if (currentViewer === viewerRevision) { MediaI18n.text($("viewer-status"), ""); MediaI18n.text($("viewer-error"), "เล่นตัวอย่างไม่ได้ ลิงก์อาจหมดอายุหรือรูปแบบไม่รองรับ ลองตรวจสอบโพสต์ใหม่ หรือเลือกดาวน์โหลดไฟล์"); } };
+      video.play().catch(() => { if (currentViewer === viewerRevision && !video.error) MediaI18n.text($("viewer-status"), "กดปุ่มเล่นบนคลิปเพื่อเริ่มดูตัวอย่าง"); });
     }
   } else {
-    const image = $("viewer-image"); image.alt = `ตัวอย่างรูปภาพ ${index + 1}`;
+    const image = $("viewer-image"); MediaI18n.attr(image, "alt", `ตัวอย่างรูปภาพ ${index + 1}`);
     if (item.thumbnail?.startsWith("/thumbnails/")) { image.src = item.thumbnail; image.hidden = false; }
-    else $("viewer-error").textContent = "ไม่มีรูปตัวอย่างสำหรับรายการนี้";
-    image.onerror = () => { $("viewer-error").textContent = "โหลดรูปตัวอย่างไม่ได้ กรุณาตรวจสอบลิงก์อีกครั้ง"; };
+    else MediaI18n.text($("viewer-error"), "ไม่มีรูปตัวอย่างสำหรับรายการนี้");
+    image.onerror = () => { MediaI18n.text($("viewer-error"), "โหลดรูปตัวอย่างไม่ได้ กรุณาตรวจสอบลิงก์อีกครั้ง"); };
   }
   $("media-viewer").scrollIntoView({ block: "nearest" });
   $("viewer-title").focus({ preventScroll: true });
@@ -140,18 +140,18 @@ function renderMedia(result, preserve = false) {
   selected.clear();
   const isProfile = result.type === "profile";
   $("profile-controls").hidden = !isProfile;
-  if (!preserve) $("profile-error").textContent = "";
-  $("picker-title").textContent = isProfile ? "เลือกโพสต์ที่จะบันทึก" : "เลือกสื่อที่จะบันทึก";
-  $("picker-help").textContent = isProfile ? "กดภาพปกเพื่อดูสื่อในโพสต์ เลือกหลายโพสต์เพื่อรวมเป็น ZIP" : "กดที่รูปเพื่อขยาย หรือกดที่คลิปเพื่อเล่นตัวอย่าง";
-  $("download-note").textContent = isProfile ? "ดาวน์โหลดทุกสื่อในโพสต์ที่เลือกเป็น ZIP · คลิปเลือกคุณภาพไม่เกิน 720p เมื่อมีให้เลือก · ขีดจำกัดนับรวมทุกสื่อ" : "เลือกได้ทั้งวิดีโอและรูปภาพ หลายรายการจะรวมเป็นไฟล์ ZIP";
-  if (isProfile) $("profile-status").textContent = `อ่านแล้ว ${numbers.format(result.items.length)} โพสต์${result.next_cursor ? " · ยังมีโพสต์เพิ่มเติม" : " · อ่านครบตามที่แพลตฟอร์มส่งมาแล้ว"}`;
+  if (!preserve) MediaI18n.text($("profile-error"), "");
+  MediaI18n.text($("picker-title"), isProfile ? "เลือกโพสต์ที่จะบันทึก" : "เลือกสื่อที่จะบันทึก");
+  MediaI18n.text($("picker-help"), isProfile ? "กดภาพปกเพื่อดูสื่อในโพสต์ เลือกหลายโพสต์เพื่อรวมเป็น ZIP" : "กดที่รูปเพื่อขยาย หรือกดที่คลิปเพื่อเล่นตัวอย่าง");
+  MediaI18n.text($("download-note"), isProfile ? "ดาวน์โหลดทุกสื่อในโพสต์ที่เลือกเป็น ZIP · คลิปเลือกคุณภาพไม่เกิน 720p เมื่อมีให้เลือก · ขีดจำกัดนับรวมทุกสื่อ" : "เลือกได้ทั้งวิดีโอและรูปภาพ หลายรายการจะรวมเป็นไฟล์ ZIP");
+  if (isProfile) MediaI18n.text($("profile-status"), `อ่านแล้ว ${numbers.format(result.items.length)} โพสต์${result.next_cursor ? " · ยังมีโพสต์เพิ่มเติม" : " · อ่านครบตามที่แพลตฟอร์มส่งมาแล้ว"}`);
   $("empty-state").hidden = true;
   $("media-content").hidden = false;
   $("media-title").textContent = result.title;
-  if (isProfile && !result.items.length && !result.next_cursor) $("profile-status").textContent = "ยังไม่พบโพสต์ อาจไม่มีโพสต์หรือบัญชีที่เชื่อมต่อยังไม่มีสิทธิ์ดู";
+  if (isProfile && !result.items.length && !result.next_cursor) MediaI18n.text($("profile-status"), "ยังไม่พบโพสต์ อาจไม่มีโพสต์หรือบัญชีที่เชื่อมต่อยังไม่มีสิทธิ์ดู");
   const kinds = { video: "วิดีโอ", image: "รูปภาพ", carousel: "โพสต์หลายรายการ", profile: `โปรไฟล์ ${result.platform || "Instagram"}` };
   const duration = result.duration ? ` · ${numbers.format(Math.floor(result.duration / 60))}:${String(Math.floor(result.duration % 60)).padStart(2, "0")} นาที` : "";
-  $("media-meta").textContent = `${kinds[result.type] || "สื่อ"} · ${numbers.format(result.items.length)} รายการ${duration}`;
+  MediaI18n.text($("media-meta"), `${kinds[result.type] || "สื่อ"} · ${numbers.format(result.items.length)} รายการ${duration}`);
   const thumbnail = $("thumbnail");
   thumbnail.hidden = true;
   $("thumbnail-fallback").hidden = false;
@@ -163,15 +163,15 @@ function renderMedia(result, preserve = false) {
   result.items.forEach((item, index) => {
     const row = document.createElement("article"); row.className = "media-tile"; row.dataset.id = item.id;
     const preview = document.createElement("button"); preview.type = "button"; preview.className = "tile-preview";
-    preview.setAttribute("aria-label", `${item.type === "post" ? "ดูสื่อในโพสต์" : item.type === "video" ? "เล่นวิดีโอ" : "ดูรูปภาพ"} ${index + 1}`);
-    const placeholder = document.createElement("span"); placeholder.className = "tile-placeholder"; placeholder.textContent = "กำลังโหลดตัวอย่าง…";
+    MediaI18n.attr(preview, "aria-label", `${item.type === "post" ? "ดูสื่อในโพสต์" : item.type === "video" ? "เล่นวิดีโอ" : "ดูรูปภาพ"} ${index + 1}`);
+    const placeholder = document.createElement("span"); placeholder.className = "tile-placeholder"; MediaI18n.text(placeholder, "กำลังโหลดตัวอย่าง…");
     const image = document.createElement("img"); image.alt = ""; image.loading = "lazy"; image.decoding = "async";
     image.onload = () => { placeholder.hidden = true; image.classList.add("is-loaded"); };
-    image.onerror = () => { placeholder.textContent = "ไม่มีรูปตัวอย่าง"; };
+    image.onerror = () => { MediaI18n.text(placeholder, "ไม่มีรูปตัวอย่าง"); };
     if (item.thumbnail?.startsWith("/thumbnails/")) image.src = item.thumbnail;
-    else placeholder.textContent = "ไม่มีรูปตัวอย่าง";
+    else MediaI18n.text(placeholder, "ไม่มีรูปตัวอย่าง");
     preview.append(placeholder, image);
-    if (item.type === "video") { const play = document.createElement("span"); play.className = "tile-play"; play.textContent = "▶"; play.setAttribute("aria-hidden", "true"); preview.append(play); }
+    if (item.type === "video") { const play = document.createElement("span"); play.className = "tile-play"; MediaI18n.text(play, "▶"); play.setAttribute("aria-hidden", "true"); preview.append(play); }
     preview.addEventListener("click", () => item.type === "post" ? openProfilePost(item, preview) : openViewer(item, index, preview));
     row.append(preview);
     const label = document.createElement("label");
@@ -180,18 +180,18 @@ function renderMedia(result, preserve = false) {
     checkbox.type = "checkbox"; checkbox.checked = previous.has(item.id) ? previous.get(item.id) : true; checkbox.dataset.item = item.id;
     selected.set(item.id, checkbox.checked);
     checkbox.addEventListener("change", () => { selected.set(item.id, checkbox.checked); selectionState(); });
-    label.append(checkbox, document.createTextNode(`${item.type === "post" ? "โพสต์" : item.type === "video" ? "วิดีโอ" : "รูปภาพ"} ${index + 1}`));
+    label.append(checkbox, MediaI18n.label(`${item.type === "post" ? "โพสต์" : item.type === "video" ? "วิดีโอ" : "รูปภาพ"} ${index + 1}`));
     row.append(label);
     if (item.type === "post") {
       const caption = document.createElement("p"); caption.className = "post-caption"; caption.textContent = item.title; row.append(caption);
-      const detail = document.createElement("p"); detail.className = "post-detail"; detail.textContent = `${numbers.format(item.media_count)} สื่อ${item.has_video ? " · มีวิดีโอ" : " · รูปภาพ"}`; row.append(detail);
+      const detail = document.createElement("p"); detail.className = "post-detail"; MediaI18n.text(detail, `${numbers.format(item.media_count)} สื่อ${item.has_video ? " · มีวิดีโอ" : " · รูปภาพ"}`); row.append(detail);
     }
     if (item.type === "video") {
       const qualityLabel = document.createElement("label"); qualityLabel.className = "quality-control";
       const select = document.createElement("select"); select.dataset.quality = item.id;
-      select.setAttribute("aria-label", `คุณภาพวิดีโอ ${index + 1}`);
+      MediaI18n.attr(select, "aria-label", `คุณภาพวิดีโอ ${index + 1}`);
       item.qualities.forEach((quality) => {
-        const option = document.createElement("option"); option.value = quality.id; option.textContent = quality.id === "mp3" ? "MP3" : quality.label; select.append(option);
+        const option = document.createElement("option"); option.value = quality.id; MediaI18n.text(option, quality.id === "mp3" ? "MP3" : quality.label); select.append(option);
       });
       const preferred = item.qualities.find((q) => q.id === "720p") || item.qualities.find((q) => q.id !== "mp3") || item.qualities[0];
       if (preferred) select.value = preferred.id;
@@ -201,8 +201,9 @@ function renderMedia(result, preserve = false) {
   });
   if (result.limits) {
     const limits = result.limits;
-    $("limits").textContent = `สูงสุด ${numbers.format(limits.max_file_mb)} MB ต่องาน · วิดีโอไม่เกิน ${numbers.format(limits.max_duration_seconds / 60)} นาที · ไม่เกิน ${numbers.format(limits.max_items)} รายการ · ไฟล์เก็บไว้ ${numbers.format(limits.ttl_seconds / 60)} นาที`;
+    MediaI18n.text($("limits"), `สูงสุด ${numbers.format(limits.max_file_mb)} MB ต่องาน · วิดีโอไม่เกิน ${numbers.format(limits.max_duration_seconds / 60)} นาที · ไม่เกิน ${numbers.format(limits.max_items)} รายการ · ไฟล์เก็บไว้ ${numbers.format(limits.ttl_seconds / 60)} นาที`);
   }
+  MediaI18n.prune();
   step(1); selectionState();
   openPicker();
 }
@@ -217,7 +218,7 @@ async function loadProfilePages(all = false) {
   const current = revision, profileUrl = inspectedUrl;
   const controller = new AbortController(); profileLoading = controller; readAllPosts = all;
   const cursors = new Set();
-  $("profile-error").textContent = "";
+  MediaI18n.text($("profile-error"), "");
   selectionState();
   try {
     do {
@@ -225,7 +226,7 @@ async function loadProfilePages(all = false) {
       if (!cursor || cursors.has(cursor)) throw new Error("แพลตฟอร์มส่งหน้าซ้ำ กรุณาลองใหม่ภายหลัง");
       cursors.add(cursor);
       if (cursors.size > 100) throw new Error("อ่านครบขีดจำกัด 100 หน้าแล้ว กรุณาเลือกดาวน์โหลดเป็นชุด");
-      $("profile-status").textContent = `กำลังอ่านโพสต์เพิ่ม… อ่านแล้ว ${numbers.format(media.items.length)} โพสต์`;
+      MediaI18n.text($("profile-status"), `กำลังอ่านโพสต์เพิ่ม… อ่านแล้ว ${numbers.format(media.items.length)} โพสต์`);
       const page = await api("/info", { method: "POST", body: JSON.stringify({ url: profileUrl, cursor }), signal: controller.signal });
       if (revision !== current || controller.signal.aborted) return;
       const merged = new Map(media.items.map((item) => [item.id, item]));
@@ -234,11 +235,11 @@ async function loadProfilePages(all = false) {
       renderMedia({ ...media, items: [...merged.values()], next_cursor: page.next_cursor }, true);
     } while (readAllPosts && media.next_cursor);
   } catch (issue) {
-    if (revision === current && !controller.signal.aborted) { $("profile-error").textContent = issue.message; $("profile-status").textContent = `เก็บไว้ ${numbers.format(media.items.length)} โพสต์ · อ่านต่อไม่สำเร็จ`; }
+    if (revision === current && !controller.signal.aborted) { MediaI18n.text($("profile-error"), issue.message); MediaI18n.text($("profile-status"), `เก็บไว้ ${numbers.format(media.items.length)} โพสต์ · อ่านต่อไม่สำเร็จ`); }
   } finally {
     if (profileLoading === controller) {
       profileLoading = null; readAllPosts = false;
-      if (controller.signal.aborted && media?.type === "profile") $("profile-status").textContent = `หยุดอ่านแล้ว · เก็บไว้ ${numbers.format(media.items.length)} โพสต์`;
+      if (controller.signal.aborted && media?.type === "profile") MediaI18n.text($("profile-status"), `หยุดอ่านแล้ว · เก็บไว้ ${numbers.format(media.items.length)} โพสต์`);
       selectionState();
     }
   }
@@ -258,7 +259,7 @@ async function openProfilePost(item, trigger) {
     renderMedia(result); $("return-profile-picker").hidden = false;
     $("picker-title").setAttribute("tabindex", "-1"); $("picker-title").focus();
   } catch (issue) {
-    if (revision === current) $("profile-error").textContent = issue.message;
+    if (revision === current) MediaI18n.text($("profile-error"), issue.message);
   } finally {
     if (inspection === controller) { inspection = null; selectionState(); }
     trigger.removeAttribute("aria-busy");
@@ -281,8 +282,8 @@ urlInput.addEventListener("input", () => {
   inspection?.abort(); inspection = null;
   media = null; inspectedUrl = ""; selected.clear();
   $("media-content").hidden = true; $("empty-state").hidden = false;
-  $("empty-title").textContent = "เริ่มจากวางลิงก์ที่คุณต้องการบันทึก";
-  $("empty-detail").textContent = "ตรวจสอบลิงก์เพื่อดูตัวอย่างและเลือกวิดีโอหรือรูปภาพ";
+  MediaI18n.text($("empty-title"), "เริ่มจากวางลิงก์ที่คุณต้องการบันทึก");
+  MediaI18n.text($("empty-detail"), "ตรวจสอบลิงก์เพื่อดูตัวอย่างและเลือกวิดีโอหรือรูปภาพ");
   busy(inspectButton, false); $("media-section").setAttribute("aria-busy", "false");
   step(0); selectionState(); error();
 });
@@ -300,8 +301,8 @@ form.addEventListener("submit", async (event) => {
   error(); busy(inspectButton, true);
   selectionState();
   $("media-section").setAttribute("aria-busy", "true");
-  $("empty-title").textContent = "กำลังตรวจสอบลิงก์…";
-  $("empty-detail").textContent = "บางแพลตฟอร์มอาจใช้เวลาสักครู่";
+  MediaI18n.text($("empty-title"), "กำลังตรวจสอบลิงก์…");
+  MediaI18n.text($("empty-detail"), "บางแพลตฟอร์มอาจใช้เวลาสักครู่");
   try {
     const result = await api("/info", { method: "POST", body: JSON.stringify({ url }), signal: inspection.signal });
     if (revision !== current) return;
@@ -312,8 +313,8 @@ form.addEventListener("submit", async (event) => {
     media = null; selected.clear();
     $("media-content").hidden = true; $("empty-state").hidden = false;
     error(issue.message, true);
-    $("empty-title").textContent = "ยังตรวจสอบลิงก์นี้ไม่ได้";
-    $("empty-detail").textContent = "ตรวจสอบลิงก์และสิทธิ์ของบัญชีที่ล็อกอิน แล้วกดตรวจสอบอีกครั้ง";
+    MediaI18n.text($("empty-title"), "ยังตรวจสอบลิงก์นี้ไม่ได้");
+    MediaI18n.text($("empty-detail"), "ตรวจสอบลิงก์และสิทธิ์ของบัญชีที่ล็อกอิน แล้วกดตรวจสอบอีกครั้ง");
   } finally {
     if (revision === current) {
       inspection = null; busy(inspectButton, false);
@@ -342,19 +343,19 @@ async function pollJob() {
       const phases = { queued: "กำลังรอคิว", inspecting: "กำลังตรวจสอบสื่ออีกครั้ง", downloading: "กำลังดาวน์โหลด", converting: "กำลังแปลงไฟล์" };
       if (job.status === "completed") {
         $("progress").value = 100;
-        $("job-status").textContent = "ดาวน์โหลดเสร็จแล้ว — พร้อมบันทึกไฟล์";
+        MediaI18n.text($("job-status"), "ดาวน์โหลดเสร็จแล้ว — พร้อมบันทึกไฟล์");
         $("file-link").href = job.file_url; $("file-link").download = job.filename;
         $("file-link").hidden = false;
         activeJob = null; rememberJob(null); lockSelections(false); break;
       }
       if (job.status === "failed") {
         error(job.error?.message || "ดาวน์โหลดไม่สำเร็จ กรุณาลองใหม่");
-        $("job-status").textContent = "ดาวน์โหลดไม่สำเร็จ — เลือกรายการแล้วลองใหม่ได้";
+        MediaI18n.text($("job-status"), "ดาวน์โหลดไม่สำเร็จ — เลือกรายการแล้วลองใหม่ได้");
         $("progress").value = 0;
         activeJob = null; rememberJob(null); lockSelections(false); break;
       }
       const percent = job.progress || 0;
-      $("job-status").textContent = `${phases[job.phase] || "กำลังทำงาน"}${percent > 0 ? ` ${numbers.format(percent)}%` : "…"}`;
+      MediaI18n.text($("job-status"), `${phases[job.phase] || "กำลังทำงาน"}${percent > 0 ? ` ${numbers.format(percent)}%` : "…"}`);
       if (percent > 0) $("progress").value = percent; else $("progress").removeAttribute("value");
       await new Promise((resolve) => setTimeout(resolve, 1200));
     }
@@ -362,10 +363,10 @@ async function pollJob() {
     error(issue.message);
     if (issue.status === 404) {
       activeJob = null; rememberJob(null); lockSelections(false);
-      $("job-status").textContent = "งานหมดอายุหรือระบบถูกเริ่มใหม่ กรุณาตรวจสอบลิงก์อีกครั้ง";
+      MediaI18n.text($("job-status"), "งานหมดอายุหรือระบบถูกเริ่มใหม่ กรุณาตรวจสอบลิงก์อีกครั้ง");
       $("progress").value = 0;
     } else {
-      $("job-status").textContent = "ยังตรวจสอบสถานะไม่ได้ งานอาจยังทำงานอยู่";
+      MediaI18n.text($("job-status"), "ยังตรวจสอบสถานะไม่ได้ งานอาจยังทำงานอยู่");
       $("retry-status").disabled = false;
       $("retry-status").hidden = false;
     }
@@ -383,15 +384,21 @@ downloadButton.addEventListener("click", async () => {
   if (selections.length > (media.limits?.max_items || 100)) { error("เลือกเกินจำนวนที่กำหนด กรุณาแบ่งดาวน์โหลดเป็นชุด"); return; }
   submitting = true; error(); busy(downloadButton, true); lockSelections(true);
   $("file-link").hidden = true; $("retry-status").hidden = true;
-  $("job-status").textContent = "กำลังสร้างงาน…"; $("progress").removeAttribute("value");
+  MediaI18n.text($("job-status"), "กำลังสร้างงาน…"); $("progress").removeAttribute("value");
   try {
     const result = await api("/download", { method: "POST", body: JSON.stringify({ url: inspectedUrl, selections }) });
     activeJob = result.job_id; rememberJob(activeJob); step(2); pollJob();
   } catch (issue) {
     error(issue.message + " หากการเชื่อมต่อขาด งานอาจถูกสร้างแล้ว กรุณาตรวจสอบก่อนลองใหม่");
-    $("job-status").textContent = "ยังยืนยันการสร้างงานไม่ได้"; $("progress").value = 0;
+    MediaI18n.text($("job-status"), "ยังยืนยันการสร้างงานไม่ได้"); $("progress").value = 0;
   } finally { submitting = false; busy(downloadButton, false); lockSelections(!!activeJob); }
 });
 try { activeJob = sessionStorage.getItem("media-job"); } catch { /* Storage is optional. */ }
 if (activeJob && /^[a-f0-9]{32}$/.test(activeJob)) { step(2); lockSelections(true); pollJob(); }
 else { activeJob = null; rememberJob(null); }
+
+function toggleLanguage() { MediaI18n.setLanguage(MediaI18n.language === "th" ? "en" : "th"); }
+$("language-toggle").addEventListener("click", toggleLanguage);
+$("picker-language-toggle").addEventListener("click", toggleLanguage);
+$("language-toggle").disabled = false;
+$("picker-language-toggle").disabled = false;

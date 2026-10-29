@@ -3,83 +3,87 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
-  <title>Media Downloader — ดาวน์โหลดวิดีโอและรูปภาพ</title>
-  <link rel="icon" href="data:,">
+  <meta name="color-scheme" content="dark">
+  <title data-i18n>Media Downloader — ดาวน์โหลดวิดีโอและรูปภาพ</title>
+  <link rel="icon" href="/assets/cat.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/assets/styles.css">
+  <script src="/assets/i18n.js" defer></script>
   <script src="/assets/app.js" defer></script>
 </head>
 <body>
   <main class="page">
     <header class="brand">
-      <svg class="brand-mark" viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M24 5v27m-10-10 10 10 10-10M7 41h34" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <div><h1>Media Downloader</h1><p>บันทึกวิดีโอและรูปภาพจากลิงก์</p></div>
+      <img class="brand-mark" src="/assets/cat.svg" width="72" height="72" alt="">
+      <div class="brand-copy"><h1>Media Downloader</h1><p data-i18n>บันทึกวิดีโอและรูปภาพจากลิงก์</p></div>
+      <button id="language-toggle" class="language-switch" type="button" data-language-toggle disabled aria-label="Switch to English">EN</button>
     </header>
 
     <div class="workspace">
+      <div class="window-rail" aria-hidden="true"><span></span><span></span><span></span></div>
       <ol class="steps" aria-label="ขั้นตอนการดาวน์โหลด">
-        <li aria-current="step"><span class="step-number">1</span>วางลิงก์</li>
-        <li><span class="step-number">2</span>เลือกสื่อ</li>
-        <li><span class="step-number">3</span>ดาวน์โหลด</li>
+        <li aria-current="step"><span class="step-number">1</span><span data-i18n>วางลิงก์</span></li>
+        <li><span class="step-number">2</span><span data-i18n>เลือกสื่อ</span></li>
+        <li><span class="step-number">3</span><span data-i18n>ดาวน์โหลด</span></li>
       </ol>
 
       <form id="link-form" novalidate>
-        <label class="field-label" for="url">ลิงก์วิดีโอ โพสต์ หรือโปรไฟล์ Instagram</label>
+        <label class="field-label" for="url" data-i18n>ลิงก์วิดีโอ โพสต์ หรือโปรไฟล์</label>
         <div class="link-controls">
           <input id="url" name="url" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="วางลิงก์ที่นี่ เช่น https://youtu.be/…" aria-describedby="url-help error-message" maxlength="8192">
-          <button class="primary check-button" id="inspect" type="submit">ตรวจสอบ</button>
+          <button class="primary check-button" id="inspect" type="submit" data-i18n>ตรวจสอบ</button>
         </div>
-        <p class="help" id="url-help">YouTube · Facebook · Instagram · X · TikTok — เนื้อหาของคุณหรือที่ได้รับอนุญาต</p>
+        <p class="help" id="url-help" data-i18n>YouTube · Facebook · Instagram · X · TikTok — เนื้อหาของคุณหรือที่ได้รับอนุญาต</p>
       </form>
       <div class="message-slot"><p id="error-message" class="error" role="alert"></p></div>
 
       <section id="media-section" aria-labelledby="media-heading" aria-busy="false">
-        <div class="section-heading"><h2 id="media-heading">เลือกสื่อที่ต้องการ</h2><span id="selection-count" class="help"></span></div>
+        <div class="section-heading"><h2 id="media-heading" data-i18n>เลือกสื่อที่ต้องการ</h2><span id="selection-count" class="help"></span></div>
         <div id="empty-state" class="empty-state">
-          <svg viewBox="0 0 64 64" fill="none" aria-hidden="true"><path d="M32 10v27m-9-9 9 9 9-9M12 39v13h40V39" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <p id="empty-title">เริ่มจากวางลิงก์ที่คุณต้องการบันทึก</p>
-          <p class="help" id="empty-detail">ตรวจสอบลิงก์เพื่อดูตัวอย่างและเลือกวิดีโอหรือรูปภาพ</p>
+          <img class="empty-cat" src="/assets/cat.svg" width="132" height="132" alt="">
+          <p id="empty-title" data-i18n>เริ่มจากวางลิงก์ที่คุณต้องการบันทึก</p>
+          <p class="help" id="empty-detail" data-i18n>ตรวจสอบลิงก์เพื่อดูตัวอย่างและเลือกวิดีโอหรือรูปภาพ</p>
         </div>
         <div id="media-content" hidden>
           <div class="preview">
-            <div class="thumbnail-frame"><img id="thumbnail" alt="ตัวอย่างสื่อจากโพสต์" hidden><span id="thumbnail-fallback">ไม่มีรูปตัวอย่าง</span></div>
-            <div class="preview-copy"><h3 id="media-title"></h3><p class="help" id="media-meta"></p><p class="help" id="download-note">เลือกได้ทั้งวิดีโอและรูปภาพ หลายรายการจะรวมเป็นไฟล์ ZIP</p></div>
+            <div class="thumbnail-frame"><img id="thumbnail" alt="ตัวอย่างสื่อจากโพสต์" hidden><span id="thumbnail-fallback" data-i18n>ไม่มีรูปตัวอย่าง</span></div>
+            <div class="preview-copy"><h3 id="media-title"></h3><p class="help" id="media-meta"></p><p class="help" id="download-note" data-i18n>เลือกได้ทั้งวิดีโอและรูปภาพ หลายรายการจะรวมเป็นไฟล์ ZIP</p></div>
           </div>
-          <button id="open-picker" class="secondary" type="button" disabled>ดูตัวอย่างและเลือกสื่อ</button>
-          <button id="return-profile" disabled class="secondary" type="button" hidden>กลับไปเลือกโพสต์ในโปรไฟล์</button>
+          <button id="open-picker" class="secondary" type="button" disabled data-i18n>ดูตัวอย่างและเลือกสื่อ</button>
+          <button id="return-profile" disabled class="secondary" type="button" hidden data-i18n>กลับไปเลือกโพสต์ในโปรไฟล์</button>
         </div>
       </section>
 
-      <button class="primary download-button" id="download" type="button" disabled>ดาวน์โหลดที่เลือก</button>
+      <button class="primary download-button" id="download" type="button" disabled data-i18n>ดาวน์โหลดที่เลือก</button>
       <div class="progress-panel" id="job-panel" aria-labelledby="job-status">
-        <p id="job-status" role="status" aria-live="polite">ยังไม่มีงานดาวน์โหลด</p>
+        <p id="job-status" role="status" aria-live="polite" data-i18n>ยังไม่มีงานดาวน์โหลด</p>
         <progress id="progress" max="100" value="0" aria-label="ความคืบหน้าการดาวน์โหลด"></progress>
-        <a id="file-link" class="file-link" hidden>บันทึกไฟล์ลงเครื่อง</a>
-        <button id="retry-status" class="secondary" type="button" disabled hidden>ตรวจสอบสถานะอีกครั้ง</button>
+        <a id="file-link" class="file-link" hidden data-i18n>บันทึกไฟล์ลงเครื่อง</a>
+        <button id="retry-status" class="secondary" type="button" disabled hidden data-i18n>ตรวจสอบสถานะอีกครั้ง</button>
       </div>
-      <p class="limits" id="limits">สูงสุด 500 MB ต่องาน · วิดีโอไม่เกิน 30 นาที · ไม่เกิน 100 รายการ · ไฟล์เก็บไว้ 1 ชั่วโมง</p>
+      <p class="limits" id="limits" data-i18n>สูงสุด 500 MB ต่องาน · วิดีโอไม่เกิน 30 นาที · ไม่เกิน 100 รายการ · ไฟล์เก็บไว้ 60 นาที</p>
     </div>
-    <footer>ใช้กับเนื้อหาของตัวเองหรือที่ได้รับอนุญาตเท่านั้น<br><span>บางแพลตฟอร์มอาจต้องล็อกอินหรือบล็อกการดึงข้อมูล</span></footer>
+    <footer><span data-i18n>ใช้กับเนื้อหาของตัวเองหรือที่ได้รับอนุญาตเท่านั้น</span><br><span data-i18n>บางแพลตฟอร์มอาจต้องล็อกอินหรือบล็อกการดึงข้อมูล</span></footer>
   </main>
   <dialog id="media-picker" class="media-picker" aria-labelledby="picker-title" aria-describedby="picker-help">
     <header class="picker-header">
-      <div><h2 id="picker-title">เลือกสื่อที่จะบันทึก</h2><p id="picker-help">กดที่รูปเพื่อขยาย หรือกดที่คลิปเพื่อเล่นตัวอย่าง</p></div>
-      <button id="close-picker" class="picker-close" type="button" aria-label="ปิดกล่องเลือกสื่อ" disabled>×</button>
+      <div><h2 id="picker-title" data-i18n>เลือกสื่อที่จะบันทึก</h2><p id="picker-help" data-i18n>กดที่รูปเพื่อขยาย หรือกดที่คลิปเพื่อเล่นตัวอย่าง</p></div>
+      <div class="picker-header-actions"><button id="picker-language-toggle" class="language-switch" type="button" data-language-toggle disabled aria-label="Switch to English">EN</button>
+      <button id="close-picker" class="picker-close" type="button" aria-label="ปิดกล่องเลือกสื่อ" disabled>×</button></div>
     </header>
-    <div class="picker-toolbar"><label><input id="select-all" type="checkbox" checked> เลือกทั้งหมด</label><span id="picker-count" role="status" aria-live="polite"></span></div>
-    <button id="return-profile-picker" disabled class="viewer-back" type="button" hidden>← กลับไปเลือกโพสต์ในโปรไฟล์</button>
+    <div class="picker-toolbar"><label><input id="select-all" type="checkbox" checked><span data-i18n>เลือกทั้งหมด</span></label><span id="picker-count" role="status" aria-live="polite"></span></div>
+    <button id="return-profile-picker" disabled class="viewer-back" type="button" hidden data-i18n>← กลับไปเลือกโพสต์ในโปรไฟล์</button>
     <div id="profile-controls" class="profile-controls" hidden>
       <p id="profile-status" role="status" aria-live="polite"></p>
       <div class="profile-actions">
-        <button id="load-more" disabled type="button">โหลดเพิ่ม</button>
-        <button id="load-all-posts" disabled type="button">อ่านโพสต์ทั้งหมด</button>
-        <button id="stop-profile" disabled type="button" hidden>หยุดอ่าน</button>
+        <button id="load-more" disabled type="button" data-i18n>โหลดเพิ่ม</button>
+        <button id="load-all-posts" disabled type="button" data-i18n>อ่านโพสต์ทั้งหมด</button>
+        <button id="stop-profile" disabled type="button" hidden data-i18n>หยุดอ่าน</button>
       </div>
       <p id="profile-error" role="alert"></p>
     </div>
     <div class="picker-body">
       <section id="media-viewer" class="media-viewer" aria-labelledby="viewer-title" hidden>
-        <div class="viewer-heading"><h3 id="viewer-title" tabindex="-1"></h3><button id="close-viewer" class="viewer-back" type="button" disabled>กลับไปดูทั้งหมด</button></div>
+        <div class="viewer-heading"><h3 id="viewer-title" tabindex="-1"></h3><button id="close-viewer" class="viewer-back" type="button" disabled data-i18n>กลับไปดูทั้งหมด</button></div>
         <img id="viewer-image" alt="" hidden>
         <video id="viewer-video" controls playsinline preload="none" hidden></video>
         <p id="viewer-status" role="status" aria-live="polite"></p>
@@ -87,7 +91,7 @@
       </section>
       <div id="media-list" class="media-grid"></div>
     </div>
-    <form method="dialog" class="picker-footer" novalidate><button type="submit">เสร็จแล้ว</button></form>
+    <form method="dialog" class="picker-footer" novalidate><button type="submit" data-i18n>เสร็จแล้ว</button></form>
   </dialog>
 </body>
 </html>
