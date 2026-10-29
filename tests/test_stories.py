@@ -44,6 +44,47 @@ def product_fixture(video=False):
 
 
 class StoryTests(unittest.TestCase):
+    def test_album_metadata_is_shared_once_by_image_and_video_adapters(self):
+        from backend.validators import ValidatedURL
+
+        url = "https://www.instagram.com/stories/highlights/123/"
+        product = {"carousel_media": [product_fixture(video=True)]}
+        public_video = {
+            "raw": {
+                "id": "fixture",
+                "title": "Story",
+                "formats": [
+                    {
+                        "url": "https://cdn.example/video.mp4",
+                        "protocol": "https",
+                        "ext": "mp4",
+                        "vcodec": "avc1",
+                        "acodec": "aac",
+                        "height": 720,
+                    }
+                ],
+            },
+            "qualities": [{"id": "720p"}],
+            "use_cookies": True,
+        }
+        with (
+            patch.object(downloader, "settings", replace(downloader.settings, browser="chrome")),
+            patch.object(
+                downloader,
+                "validate_url",
+                return_value=ValidatedURL(url, "www.instagram.com", 443, ("8.8.8.8",)),
+            ),
+            patch.object(downloader, "has_login_session", return_value=True),
+            patch.object(downloader, "instagram_story_product", return_value=product) as load,
+            patch.object(downloader, "image_info", return_value=[]) as images,
+            patch.object(downloader, "video_info", return_value=({}, [public_video])) as videos,
+        ):
+            result = downloader.inspect_media(url)
+        load.assert_called_once_with(url)
+        images.assert_called_once_with(url, use_cookies=True, instagram_product=product)
+        videos.assert_called_once_with(url, use_cookies=True, instagram_product=product)
+        self.assertEqual(len(result[0]["items"]), 1)
+
     def test_story_links_remain_intact_and_do_not_use_public_post_query(self):
         self.assertTrue(downloader.instagram_story(URL))
         self.assertTrue(downloader.instagram_story(URL + "?source=fixture"))

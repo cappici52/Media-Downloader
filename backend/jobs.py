@@ -146,6 +146,7 @@ class Job:
     selections: list
     directory: Path
     video_format: str = "mkv"
+    inspected: list | None = None
     status: str = "queued"
     progress: float = 0
     phase: str = "queued"
@@ -197,7 +198,7 @@ class JobManager:
             task.cancel()
         await asyncio.gather(*self.tasks, return_exceptions=True)
 
-    async def submit(self, url, selections, *, video_format="mkv"):
+    async def submit(self, url, selections, *, video_format="mkv", inspected=None):
         await self.cleanup()
         if self.queue.full():
             raise MediaError("queue_full", "คิวงานเต็ม กรุณารอสักครู่แล้วลองใหม่")
@@ -213,7 +214,9 @@ class JobManager:
         identifier = uuid4().hex
         directory = self.limits.root / identifier
         directory.mkdir()
-        job = Job(identifier, url, selections, directory, video_format=video_format)
+        job = Job(
+            identifier, url, selections, directory, video_format=video_format, inspected=inspected
+        )
         self.jobs[identifier] = job
         try:
             self.queue.put_nowait(job)
@@ -251,6 +254,7 @@ class JobManager:
                             "selections": job.selections,
                             "video_format": job.video_format,
                             "directory": str(job.directory),
+                            **({"_inspected": job.inspected} if job.inspected is not None else {}),
                         },
                         timeout=self.limits.timeout,
                         progress=update,
@@ -277,6 +281,7 @@ class JobManager:
                 }
                 await asyncio.to_thread(shutil.rmtree, job.directory, True)
             finally:
+                job.inspected = None
                 job.finished_at = time.time()
                 self.queue.task_done()
 

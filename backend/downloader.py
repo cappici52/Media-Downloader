@@ -908,7 +908,11 @@ def inspect_media(url, cursor=None, *, use_session_first=False):
     authenticated = (
         use_session_first and settings.browser and has_login_session(worker_cookie_jar(), url)
     )
-    if authenticated and instagram_post_url(url):
+    if instagram_story(url) and settings.browser and has_login_session(worker_cookie_jar(), url):
+        # Stories/Highlights require this session; share one album response across adapters.
+        authenticated = True
+        product = instagram_story_product(url)
+    elif authenticated and instagram_post_url(url):
         product = instagram_authenticated_product(url)
 
     def inspect_adapter(adapter):
@@ -962,7 +966,7 @@ def inspect_media(url, cursor=None, *, use_session_first=False):
         raise preferred or (
             failures[-1] if failures else MediaError("no_media", "ไม่พบวิดีโอหรือรูปในลิงก์นี้")
         )
-    if product:
+    if product and not instagram_story(url):
         children = product.get("carousel_media") or [product]
         if len(images) + len(videos) != len(children) or len(videos) != sum(
             item.get("media_type") == 2 for item in children
@@ -971,8 +975,16 @@ def inspect_media(url, cursor=None, *, use_session_first=False):
     if len(videos) + len(images) > settings.max_items:
         raise MediaError("item_limit", "โพสต์มีสื่อเกินจำนวนที่กำหนด")
     items = []
+    snapshot_bytes = 0
     for index, video in enumerate(videos):
         entry = video["raw"]
+        descriptor = video_preview(entry, use_cookies=video.get("use_cookies", False))
+        if descriptor and "inspected" in descriptor:
+            size = len(json.dumps(descriptor["inspected"]).encode())
+            if snapshot_bytes + size <= 2 * 1024 * 1024:
+                snapshot_bytes += size
+            else:
+                descriptor.pop("inspected")
         items.append(
             {
                 "id": f"video-{index}",
@@ -981,7 +993,7 @@ def inspect_media(url, cursor=None, *, use_session_first=False):
                 "thumbnail": entry.get("thumbnail"),
                 "duration": entry.get("duration"),
                 "qualities": video["qualities"],
-                "_preview": video_preview(entry),
+                "_preview": descriptor,
             }
         )
     for index, image in enumerate(images):
@@ -1008,7 +1020,7 @@ def inspect_media(url, cursor=None, *, use_session_first=False):
     return public, videos, images
 
 
-def video_preview(entry):
+def video_preview(entry, *, use_cookies=False):
     try:
         chosen = select_video_formats(entry.get("formats", [entry]))
     except MediaError:
@@ -1021,7 +1033,33 @@ def video_preview(entry):
         or fmt.get("protocol") not in ("http", "https")
         or fmt.get("ext") not in ("mp4", "webm")
     ):
-        return {"prepare": True, "media_type": "video/mp4", "muted": False}
+        from yt_dlp import YoutubeDL
+
+        raw = YoutubeDL.sanitize_info(
+            {
+                "id": str(entry.get("id") or "preview"),
+                "title": str(entry.get("title") or "preview")[:300],
+                "duration": entry.get("duration"),
+                "http_headers": dict(entry.get("http_headers") or {}),
+                "formats": chosen,
+            },
+            remove_private_keys=True,
+        )
+        for track in [raw, *raw["formats"]]:
+            track["http_headers"] = {
+                key: value
+                for key, value in (track.get("http_headers") or {}).items()
+                if key.lower() in ("user-agent", "referer", "origin")
+            }
+        snapshot = [
+            {"items": [{"id": "video-0", "type": "video", "qualities": []}]},
+            [{"raw": raw, "use_cookies": bool(use_cookies)}],
+            [],
+        ]
+        result = {"prepare": True, "media_type": "video/mp4", "muted": False}
+        if len(json.dumps(snapshot).encode()) <= 128 * 1024:
+            result["inspected"] = snapshot
+        return result
     headers = dict(entry.get("http_headers") or {}) | dict(fmt.get("http_headers") or {})
     return {
         "url": fmt["url"],

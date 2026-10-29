@@ -41,6 +41,7 @@ def main():
                     Path(request["directory"]),
                     emit,
                     video_format=request.get("video_format", "mkv"),
+                    inspected=request.get("_inspected"),
                 ).name
             }
         elif request["action"] == "preview":

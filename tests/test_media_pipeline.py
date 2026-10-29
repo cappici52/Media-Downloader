@@ -305,6 +305,8 @@ class VideoPipelineTests(unittest.TestCase):
                 directory,
                 lambda e: None,
                 video_format=video_format,
+                inspected=(public, videos, images),
             )
+            downloader.inspect_media.assert_not_called()
         with zipfile.ZipFile(output) as archive:
             self.assertEqual(archive.namelist(), [f"media-001.{video_format}", "media-002.jpg"])

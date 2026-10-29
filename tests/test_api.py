@@ -232,6 +232,69 @@ class APITests(unittest.TestCase):
         self.assertEqual(requests[0]["video_format"], "mp4")
         self.assertEqual(next(iter(self.manager.jobs.values())).readers, 0)
 
+    def test_prepared_preview_snapshot_stays_private_and_expires_before_reuse(self):
+        snapshot = [
+            {"items": [{"id": "video-0", "type": "video", "qualities": []}]},
+            [
+                {
+                    "raw": {
+                        "id": "private-source",
+                        "formats": [{"url": "https://cdn.example/private-signed.mp4"}],
+                    },
+                    "use_cookies": True,
+                }
+            ],
+            [],
+        ]
+        requests = []
+
+        async def worker(request, **kwargs):
+            requests.append(request)
+            (Path(request["directory"]) / "preview.mp4").write_bytes(b"0123456789")
+            return {"filename": "preview.mp4"}
+
+        for expired in (False, True):
+            data = {
+                "url": "https://instagram.com/stories/highlights/123/",
+                "type": "video",
+                "items": [
+                    {
+                        "id": "video-7",
+                        "type": "video",
+                        "_preview": {"prepare": True, "inspected": snapshot},
+                    }
+                ],
+            }
+            with (
+                self.valid_dns(),
+                patch.object(self.manager, "inspect", AsyncMock(return_value=data)),
+            ):
+                response = self.client.post(
+                    "/info", json={"url": "https://instagram.com/stories/highlights/123/"}
+                )
+            self.assertNotIn("private-signed", response.text)
+            self.assertNotIn("inspected", response.text)
+            path = response.json()["items"][0]["preview_url"]
+            if expired:
+                main.previews[path.split("/")[2]]["streams"][0]["inspected_until"] = 0
+            with patch.object(self.manager, "worker", worker):
+                self.assertEqual(
+                    self.client.get(path, headers={"Range": "bytes=0-3"}).content, b"0123"
+                )
+            request = requests[-1]
+            self.assertEqual(request["selections"][0]["id"], "video-7" if expired else "video-0")
+            self.assertEqual("_inspected" in request, not expired)
+            self.assertTrue(all(job.inspected is None for job in self.manager.jobs.values()))
+        invalid = self.client.post(
+            "/download",
+            json={
+                "url": "https://youtube.com",
+                "selections": [{"id": "video-0"}],
+                "_inspected": snapshot,
+            },
+        )
+        self.assertEqual(invalid.status_code, 422)
+
     def test_prepared_preview_failure_releases_file_lease_and_reports_error(self):
         main.previews["prepared"] = {
             "expires": time.time() + 60,

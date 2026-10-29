@@ -3,6 +3,7 @@
 from contextlib import asynccontextmanager
 import asyncio
 import copy
+import json
 from pathlib import Path
 import time
 from uuid import uuid4
@@ -145,6 +146,10 @@ def prune_previews():
     for identifier, entry in list(previews.items()):
         if entry["expires"] <= now:
             previews.pop(identifier, None)
+        else:
+            for stream in entry.get("streams", []):
+                if stream.get("inspected_until", 0) <= now:
+                    stream.pop("inspected", None)
 
 
 @app.get("/health")
@@ -180,6 +185,7 @@ async def info(payload: InfoQuery):
     urls = []
     url_indexes = {}
     streams = []
+    snapshot_bytes = 0
 
     def proxy_thumbnail(item):
         thumbnail = item.get("thumbnail")
@@ -199,6 +205,13 @@ async def info(payload: InfoQuery):
             if descriptor.get("prepare"):
                 descriptor["source_url"] = result.get("url") or url
                 descriptor["item_id"] = item["id"]
+                if "inspected" in descriptor:
+                    size = len(json.dumps(descriptor["inspected"]).encode())
+                    if snapshot_bytes + size <= 2 * 1024 * 1024:
+                        snapshot_bytes += size
+                        descriptor["inspected_until"] = time.time() + min(300, settings.ttl)
+                    else:
+                        descriptor.pop("inspected")
             streams.append(descriptor)
             item["preview_url"] = f"/streams/{identifier}/{len(streams) - 1}"
             item["preview_muted"] = bool(descriptor.get("muted"))
@@ -271,11 +284,23 @@ async def prepared_preview(descriptor, request):
     async with lock:
         job = manager.jobs.get(descriptor.get("job_id"))
         if job is None:
+            inspected = (
+                descriptor.get("inspected")
+                if descriptor.get("inspected_until", 0) > time.time()
+                else None
+            )
             job = await manager.submit(
                 descriptor["source_url"],
-                [{"id": descriptor["item_id"], "quality": "best"}],
+                [
+                    {
+                        "id": "video-0" if inspected is not None else descriptor["item_id"],
+                        "quality": "best",
+                    }
+                ],
                 video_format="mp4",
+                **({"inspected": inspected} if inspected is not None else {}),
             )
+            descriptor.pop("inspected", None)
             descriptor["job_id"] = job.id
         job.readers += 1
     try:
