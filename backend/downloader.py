@@ -901,9 +901,6 @@ def inspect_media(url, cursor=None, *, use_session_first=False):
         from .tiktok import resolve_url
 
         url = resolve_url(url)
-    tiktok_session = (
-        is_tiktok(url) and settings.browser and has_worker_session() and any(worker_cookie_jar())
-    )
     product = None
     authenticated = (
         use_session_first and settings.browser and has_login_session(worker_cookie_jar(), url)
@@ -916,8 +913,6 @@ def inspect_media(url, cursor=None, *, use_session_first=False):
         product = instagram_authenticated_product(url)
 
     def inspect_adapter(adapter):
-        if tiktok_session:
-            return adapter(url, use_cookies=True)
         if authenticated:
             return adapter(
                 url, use_cookies=True, **({"instagram_product": product} if product else {})
@@ -1368,6 +1363,15 @@ def download_media(url, selections, directory, emit, *, inspected=None, video_fo
                     use_cookies=videos[int(item["id"].split("-")[1])].get("use_cookies", False)
                 ) | {"outtmpl": str(path), "progress_hooks": [hook]}
                 with make_ydl(options) as ydl:
+                    if entry.get("extractor_key") == "TikTok":
+                        from http.cookiejar import Cookie
+
+                        # Preserve the CDN session established during inspection,
+                        # including anonymous response cookies, with domain/path scope.
+                        for row in entry.get("_preview_cookie_rows", []):
+                            cookie = Cookie(**row)
+                            if not cookie.is_expired():
+                                ydl.cookiejar.set_cookie(cookie)
                     # Download only the already-inspected format; no external protocols/processors.
                     info = dict(entry)
                     info.pop("requested_formats", None)

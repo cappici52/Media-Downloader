@@ -1,7 +1,10 @@
 import copy
+from dataclasses import replace
 import socket
 import io
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch, AsyncMock
 
 import requests
@@ -305,6 +308,97 @@ class TikTokTests(unittest.TestCase):
             raw, videos = downloader.video_info(URL, use_cookies=False)
         self.assertEqual(len(videos), 1)
         self.assertTrue(raw["title"])
+
+    def test_inspection_tries_public_post_before_saved_chrome_session(self):
+        # A saved session can receive 403 even when this public post is readable.
+        with (
+            patch.object(downloader, "settings", replace(downloader.settings, browser="chrome")),
+            patch.object(downloader, "has_worker_session", return_value=True),
+            patch.object(downloader, "worker_cookie_jar", return_value=[object()]),
+            patch.object(
+                downloader,
+                "validate_url",
+                return_value=ValidatedURL(URL, "www.tiktok.com", 443, ("8.8.8.8",)),
+            ),
+            patch.object(tiktok, "resolve_url", return_value=URL),
+            patch.object(tiktok, "post_data", return_value=fixture()),
+            patch.object(downloader, "image_info", return_value=[]) as images,
+        ):
+            result, videos, _ = downloader.inspect_media(URL)
+        self.assertEqual(result["type"], "video")
+        self.assertFalse(videos[0]["use_cookies"])
+        images.assert_called_once_with(URL, use_cookies=False)
+
+    def test_private_post_still_retries_with_authorized_session(self):
+        ext_public = self.extractor(fixture(), status=10222)
+        ext_private = self.extractor(fixture(), authenticated=True)
+        with (
+            patch.object(downloader, "settings", replace(downloader.settings, browser="chrome")),
+            patch.object(
+                downloader, "gallery_extractor", side_effect=[ext_public, ext_private]
+            ) as extract,
+        ):
+            post = downloader.extract_public_first(tiktok.post_data, URL)
+        self.assertEqual(post["id"], "123456789")
+        self.assertEqual(
+            [call.kwargs["use_cookies"] for call in extract.call_args_list], [False, True]
+        )
+
+    def test_download_preserves_anonymous_cdn_session_cookie_scope(self):
+        jar = requests.cookies.RequestsCookieJar()
+        jar.set("tt_chain_token", "fixture", domain=".tiktok.com", path="/media", secure=True)
+        row = dict(next(iter(jar)).__dict__)
+        row["rest"] = row.pop("_rest", {})
+        entry = {
+            "id": "123456789",
+            "extractor_key": "TikTok",
+            "_preview_cookie_rows": [row],
+            "formats": [
+                {
+                    "url": "https://v16.tiktok.com/media/video.mp4",
+                    "protocol": "https",
+                    "ext": "mp4",
+                    "vcodec": "h264",
+                    "acodec": "aac",
+                    "height": 1280,
+                }
+            ],
+        }
+        ydl = Mock()
+        ydl.cookiejar = requests.cookies.RequestsCookieJar()
+        ydl.__enter__ = Mock(return_value=ydl)
+        ydl.__exit__ = Mock(return_value=False)
+        with TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            ydl.process_info.side_effect = lambda info: Path(info["filepath"]).write_bytes(b"video")
+            inspected = (
+                {"items": [{"id": "video-0", "type": "video", "qualities": []}]},
+                [{"raw": entry, "use_cookies": False}],
+                [],
+            )
+            with (
+                patch.object(downloader, "make_ydl", return_value=ydl),
+                patch.object(
+                    downloader,
+                    "transcode",
+                    side_effect=lambda paths, target, **kw: target.write_bytes(b"output"),
+                ),
+            ):
+                result = downloader.download_media(
+                    URL, [{"id": "video-0"}], directory, lambda event: None, inspected=inspected
+                )
+            self.assertEqual(result.read_bytes(), b"output")
+        session = requests.Session()
+        session.cookies = ydl.cookiejar
+        self.addCleanup(session.close)
+        for url, expected in (
+            (entry["formats"][0]["url"], True),
+            ("https://other.example/media/video.mp4", False),
+            ("https://v16.tiktok.com/elsewhere", False),
+            ("http://v16.tiktok.com/media/video.mp4", False),
+        ):
+            header = session.prepare_request(requests.Request("GET", url)).headers.get("Cookie", "")
+            self.assertEqual("fixture" in header, expected)
 
 
 class TikTokSessionTests(unittest.IsolatedAsyncioTestCase):
