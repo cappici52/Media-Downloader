@@ -202,6 +202,62 @@ class PreviewTests(unittest.TestCase):
         ):
             download_preview("https://cdn.example/fake.jpg", Path(temp))
 
+    def test_heic_preview_is_jpeg_but_download_retains_original_bytes(self):
+        from pillow_heif import register_heif_opener
+        from backend.downloader import download_media
+
+        register_heif_opener(thumbnails=False)
+        source = io.BytesIO()
+        Image.new("RGB", (48, 32), "blue").save(source, format="HEIF")
+        original = source.getvalue()
+        session, _ = self.mock_session(original, {"Content-Type": "image/heic"}, status=200)
+        with (
+            tempfile.TemporaryDirectory() as temp,
+            patch("requests.Session", return_value=session),
+            patch("backend.downloader.validate_network_url"),
+        ):
+            directory = Path(temp)
+            result = download_preview("https://cdn.example/image.heic", directory)
+            with Image.open(directory / result["filename"]) as image:
+                self.assertEqual(image.format, "JPEG")
+                self.assertEqual(image.size, (48, 32))
+            inspected = (
+                {"items": [{"id": "image-0", "type": "image"}]},
+                [],
+                [
+                    {
+                        "url": "https://cdn.example/image.heic",
+                        "extension": "heic",
+                        "headers": {},
+                        "cookies": {},
+                    }
+                ],
+            )
+            downloaded = download_media(
+                "https://www.instagram.com/p/Fixture123/",
+                [{"id": "image-0"}],
+                directory,
+                lambda event: None,
+                inspected=inspected,
+            )
+            self.assertEqual(downloaded.suffix, ".heic")
+            self.assertEqual(downloaded.read_bytes(), original)
+
+            jpeg = io.BytesIO()
+            Image.new("RGB", (48, 32), "blue").save(jpeg, format="JPEG")
+            response = session.get.return_value
+            response.headers = {"Content-Type": "image/jpeg"}
+            response.iter_content.return_value = [jpeg.getvalue()]
+            downloaded = download_media(
+                "https://www.instagram.com/p/Fixture123/",
+                [{"id": "image-0"}],
+                directory,
+                lambda event: None,
+                inspected=inspected,
+            )
+            self.assertEqual(downloaded.suffix, ".jpg")
+            self.assertEqual(downloaded.read_bytes(), jpeg.getvalue())
+
 
 class StreamProcessTests(unittest.IsolatedAsyncioTestCase):
     async def test_real_stream_worker_rejects_internal_addresses_and_releases_slot(self):

@@ -33,6 +33,24 @@ def product_fixture(count=16):
 
 
 class InstagramTests(unittest.TestCase):
+    def test_gallery_keeps_heic_and_heif_album_images(self):
+        product = product_fixture(2)
+        for item, extension in zip(product["carousel_media"], ("heic", "heif")):
+            item["image_versions2"]["candidates"][0]["url"] = (
+                f"https://cdn.example/{item['pk']}.{extension}"
+            )
+        with patch.object(downloader, "validate_network_url"):
+            images = downloader.image_info(
+                "https://www.instagram.com/p/Fixture123/",
+                use_cookies=False,
+                instagram_product=product,
+            )
+        self.assertEqual([image["extension"] for image in images], ["heic", "heif"])
+        self.assertEqual(
+            [image["url"] for image in images],
+            [item["image_versions2"]["candidates"][0]["url"] for item in product["carousel_media"]],
+        )
+
     def test_private_public_fallback_retries_authorized_browser_session(self):
         adapter = Mock(side_effect=[MediaError("login_required", "login"), ["fixture"]])
         with (

@@ -622,7 +622,7 @@ def image_info(url, *, use_cookies=True, instagram_product=None):
             authenticated=has_login_session(ext.session.cookies, url),
         )
         suffix = str(metadata.get("extension", "")).lower()
-        if suffix not in ("jpg", "jpeg", "png", "webp", "gif", "avif"):
+        if suffix not in ("jpg", "jpeg", "png", "webp", "gif", "avif", "heic", "heif"):
             continue
         validate_network_url(media_url)
         if len(images) >= settings.max_items:
@@ -1081,7 +1081,15 @@ def download_preview(url, directory):
         with session.get(url, stream=True, timeout=15) as response:
             response.raise_for_status()
             kind = response.headers.get("Content-Type", "").split(";")[0].lower()
-            if kind not in ("image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"):
+            if kind not in (
+                "image/jpeg",
+                "image/png",
+                "image/webp",
+                "image/gif",
+                "image/avif",
+                "image/heic",
+                "image/heif",
+            ):
                 raise MediaError("preview", "ไม่สามารถแสดงตัวอย่างรูปนี้ได้")
             size = 0
             with target.open("wb") as stream:
@@ -1091,14 +1099,17 @@ def download_preview(url, directory):
                         raise MediaError("preview", "รูปตัวอย่างมีขนาดใหญ่เกินไป")
                     stream.write(chunk)
     from PIL import Image, ImageOps
+    from pillow_heif import register_heif_opener
     import warnings
+
+    register_heif_opener(thumbnails=False)
 
     Image.MAX_IMAGE_PIXELS = 20_000_000
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)
             with Image.open(target) as source:
-                if source.format not in ("JPEG", "PNG", "WEBP", "GIF", "AVIF"):
+                if source.format not in ("JPEG", "PNG", "WEBP", "GIF", "AVIF", "HEIF"):
                     raise MediaError("preview", "ชนิดไฟล์รูปตัวอย่างไม่รองรับ")
                 image = ImageOps.exif_transpose(source)
                 image.thumbnail((1280, 1280))
@@ -1324,8 +1335,22 @@ def download_media(url, selections, directory, emit, *, inspected=None, video_fo
                     timeout=20,
                 ) as response:
                     response.raise_for_status()
-                    if not response.headers.get("Content-Type", "").lower().startswith("image/"):
+                    content_type = response.headers.get("Content-Type", "").split(";")[0].lower()
+                    if not content_type.startswith("image/"):
                         raise MediaError("no_media", "ปลายทางไม่ได้ส่งไฟล์รูปภาพ")
+                    # Instagram can serve JPEG bytes from a URL ending in .heic.
+                    # Match the delivered type without converting the source bytes.
+                    if image["extension"] in ("heic", "heif"):
+                        extension = {
+                            "image/jpeg": "jpg",
+                            "image/png": "png",
+                            "image/webp": "webp",
+                            "image/avif": "avif",
+                            "image/heic": "heic",
+                            "image/heif": "heif",
+                        }.get(content_type)
+                        if extension:
+                            target = base.with_suffix("." + extension)
                     with target.open("wb") as stream:
                         for chunk in response.iter_content(65536):
                             stream.write(chunk)

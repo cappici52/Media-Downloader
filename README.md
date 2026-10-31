@@ -4,6 +4,7 @@ A personal localhost app for saving videos and images from **YouTube, Facebook, 
 
 - Preview media, select individual items, and save multiple files as ZIP.
 - Download the highest available video quality as MKV, MP4 or MOV; optionally save MP3 audio.
+- Keep source image bytes, including HEIC/HEIF; browser previews use JPEG.
 - Browse Instagram/TikTok profiles and supported Stories/Highlights.
 - Dark pixel-art UI with Thai/English switching.
 
